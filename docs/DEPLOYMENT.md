@@ -3,15 +3,13 @@
 ## 环境要求
 
 - **Bun** >= 1.0.0
-- **操作系统**: Linux (推荐 Ubuntu 20.04+), macOS, Windows Server
+- **操作系统**: Linux (推荐 Ubuntu 20.04+)
 - **内存**: >= 512MB
 - **磁盘**: >= 1GB
 
 ## 安装 Bun
 
-Bun 是一个高性能的 JavaScript 运行时，本项目的必需依赖。
-
-### Linux / macOS
+### Linux
 
 ```bash
 # 使用 curl 安装
@@ -23,62 +21,33 @@ source ~/.bashrc
 source ~/.zshrc
 ```
 
-> **Linux 用户注意**：
+> **注意**：
 > - 需要先安装 `unzip`：`sudo apt install unzip`（Ubuntu/Debian）或 `sudo yum install unzip`（CentOS/RHEL）
-> - 内核版本要求 5.6+（推荐），最低 5.1。使用 `uname -r` 检查内核版本
+> - 内核版本要求 5.6+（推荐），最低 5.1。使用 `uname -r` 检查
 
-### Windows
+### 包管理器安装
 
-**方式一：PowerShell（推荐）**
-
-```powershell
-powershell -c "irm bun.sh/install.ps1 | iex"
-```
-
-> 需要 Windows 10 版本 1809 或更高
-
-**方式二：使用 npm**
-
-```bash
-npm install -g bun
-```
-
-**方式三：使用 Scoop**
-
-```bash
-scoop install bun
-```
-
-### 使用包管理器安装
-
-**macOS (Homebrew)**
-
-```bash
-brew tap oven-sh/bun
-brew install oven-sh/bun/bun
-```
-
-**Linux (apt)**
+**apt (Ubuntu/Debian)**
 
 ```bash
 curl -fsSL https://apt.oven.sh | sudo bash
 sudo apt install bun
 ```
 
-**Linux (dnf/yum)**
+**dnf/yum (CentOS/RHEL)**
 
 ```bash
 curl -fsSL https://rpm.oven.sh | sudo bash
 sudo dnf install bun
 ```
 
-**Linux (pacman)**
+**pacman (Arch)**
 
 ```bash
 pacman -S bun
 ```
 
-### 使用 Docker
+### Docker
 
 ```bash
 # 拉取官方镜像
@@ -124,10 +93,7 @@ source ~/.bashrc
 **问题：权限不足**
 
 ```bash
-# Linux/macOS 使用 sudo
-sudo curl -fsSL https://bun.sh/install | bash
-
-# Windows 以管理员身份运行 PowerShell
+sudo curl -fsSL https://bun.com/install | bash
 ```
 
 ---
@@ -183,66 +149,27 @@ bun run dist/main.js start --port 4242
 
 ---
 
-## 方案三：PM2 进程管理（推荐生产环境）
-
-PM2 提供进程守护、自动重启、日志管理、开机自启等功能。
-
-### 安装 PM2
+## 方案三：PM2 后台运行（推荐）
 
 ```bash
+# 安装 PM2
 npm install -g pm2
-```
 
-### 创建配置文件
-
-在项目根目录创建 `ecosystem.config.cjs`：
-
-```javascript
-module.exports = {
-  apps: [{
-    name: 'copilot-manager',
-    script: 'dist/main.js',
-    args: 'start --port 4242',
-    cwd: '/opt/copilot-manager',
-    instances: 1,
-    autorestart: true,
-    watch: false,
-    max_memory_restart: '500M',
-    env: {
-      NODE_ENV: 'production'
-    }
-  }]
-}
-```
-
-### 启动服务
-
-```bash
-# 构建应用
+# 构建
 bun run build
 
-# 启动
-pm2 start ecosystem.config.cjs
+# 后台启动
+pm2 start dist/main.js --name copilot-manager -- start
 
-# 查看状态
-pm2 status
+# 常用命令
+pm2 status                      # 查看状态
+pm2 logs copilot-manager        # 查看日志
+pm2 restart copilot-manager     # 重启
+pm2 stop copilot-manager        # 停止
 
-# 查看日志
-pm2 logs copilot-manager
-
-# 设置开机自启
+# 开机自启
 pm2 save
 pm2 startup
-```
-
-### 常用命令
-
-```bash
-pm2 restart copilot-manager   # 重启
-pm2 stop copilot-manager      # 停止
-pm2 delete copilot-manager    # 删除
-pm2 logs copilot-manager      # 查看日志
-pm2 monit                     # 监控面板
 ```
 
 ---
