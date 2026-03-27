@@ -32,6 +32,7 @@
             <th>账号</th>
             <th>Key 名称</th>
             <th>方法</th>
+            <th>模型</th>
             <th>路径</th>
             <th>状态码</th>
             <th>耗时</th>
@@ -39,7 +40,7 @@
           </tr>
         </thead>
         <tbody id="logs-table">
-          <tr><td colspan="8" class="table-empty">加载中...</td></tr>
+          <tr><td colspan="9" class="table-empty">加载中...</td></tr>
         </tbody>
       </table>
 
@@ -84,7 +85,7 @@ async function loadLogs(page = 1) {
 function renderLogs(res) {
   const tbody = document.getElementById('logs-table')
   if (!res.logs.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="table-empty">暂无日志</td></tr>'
+    tbody.innerHTML = '<tr><td colspan="9" class="table-empty">暂无日志</td></tr>'
   } else {
     tbody.innerHTML = res.logs.map(log => `
       <tr>
@@ -92,6 +93,7 @@ function renderLogs(res) {
         <td>${escHtml(log.account_name)}</td>
         <td class="text-muted">${escHtml(log.api_key_name)}</td>
         <td><code>${escHtml(log.method)}</code></td>
+        <td class="text-muted">${escHtml(log.model ?? '-')}</td>
         <td class="monospace" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;" title="${escHtml(log.path)}">${escHtml(log.path)}</td>
         <td>${statusCodeBadge(log.status_code)}</td>
         <td class="text-muted">${formatDuration(log.duration_ms)}</td>

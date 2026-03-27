@@ -82,6 +82,24 @@ proxyRoutes.all("/*", async (c) => {
   headers.delete("host")
   headers.delete("content-length")
 
+  // 提取请求体中的 model 字段（仅 JSON body 且非 GET/HEAD）
+  let model: string | null = null
+  let bodyBuffer: ArrayBuffer | undefined
+
+  const hasBody = c.req.method !== "GET" && c.req.method !== "HEAD"
+  if (hasBody && c.req.raw.body) {
+    bodyBuffer = await c.req.raw.arrayBuffer()
+    const contentType = c.req.header("content-type") ?? ""
+    if (contentType.includes("application/json") && bodyBuffer.byteLength > 0) {
+      try {
+        const parsed = JSON.parse(new TextDecoder().decode(bodyBuffer))
+        if (typeof parsed?.model === "string") model = parsed.model
+      } catch {
+        // 解析失败，model 保持 null
+      }
+    }
+  }
+
   let upstreamResponse: Response
   let errorMsg: string | null = null
 
@@ -93,7 +111,7 @@ proxyRoutes.all("/*", async (c) => {
     upstreamResponse = await fetch(upstreamUrl, {
       method: c.req.method,
       headers,
-      body: c.req.method !== "GET" && c.req.method !== "HEAD" ? c.req.raw.body : undefined,
+      body: hasBody ? bodyBuffer : undefined,
       // @ts-ignore - duplex required for streaming request bodies
       duplex: "half",
     })
@@ -112,6 +130,7 @@ proxyRoutes.all("/*", async (c) => {
         path: c.req.path,
         status_code: 502,
         duration_ms: Date.now() - startTime,
+        model,
         error: errorMsg,
         created_at: new Date().toISOString(),
       }
@@ -135,6 +154,7 @@ proxyRoutes.all("/*", async (c) => {
       path: c.req.path,
       status_code: upstreamResponse.status,
       duration_ms: durationMs,
+      model,
       error: null,
       created_at: new Date().toISOString(),
     }

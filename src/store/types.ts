@@ -60,6 +60,7 @@ export interface RequestLog {
   path: string
   status_code: number
   duration_ms: number
+  model: string | null
   error: string | null
   created_at: string
 }
