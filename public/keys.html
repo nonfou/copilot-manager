@@ -34,6 +34,7 @@
         <thead>
           <tr>
             <th>名称</th>
+            <th>归属用户</th>
             <th>关联账号</th>
             <th>Key 值</th>
             <th>状态</th>
@@ -43,7 +44,7 @@
           </tr>
         </thead>
         <tbody id="keys-table">
-          <tr><td colspan="7" class="table-empty">加载中...</td></tr>
+          <tr><td colspan="8" class="table-empty">加载中...</td></tr>
         </tbody>
       </table>
     </div>
@@ -64,6 +65,10 @@
     <div class="form-group">
       <label class="form-label">关联账号</label>
       <select class="form-select" id="new-key-account"></select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">归属用户</label>
+      <select class="form-select" id="new-key-owner"></select>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('modal-create-key')">取消</button>
@@ -118,6 +123,7 @@
 <script src="app.js"></script>
 <script>
 let accounts = []
+let users = []
 let revealedKey = ''
 
 async function loadAccountOptions() {
@@ -137,6 +143,19 @@ async function loadAccountOptions() {
   }
 }
 
+async function loadUserOptions() {
+  try {
+    const data = await api.get('/users')
+    users = data.users ?? []
+    const select = document.getElementById('new-key-owner')
+    select.innerHTML = users.map(u =>
+      `<option value="${u.id}">${escHtml(u.username)}${u.role === 'admin' ? ' (admin)' : ''}</option>`
+    ).join('')
+  } catch {
+    // 非 admin 无权限时静默忽略
+  }
+}
+
 async function loadKeys() {
   const accountId = document.getElementById('filter-account').value
   try {
@@ -150,7 +169,7 @@ async function loadKeys() {
 function renderKeys(keys) {
   const tbody = document.getElementById('keys-table')
   if (!keys.length) {
-    tbody.innerHTML = '<tr><td colspan="7" class="table-empty">暂无 Key，点击「新建 Key」添加</td></tr>'
+    tbody.innerHTML = '<tr><td colspan="8" class="table-empty">暂无 Key，点击「新建 Key」添加</td></tr>'
     return
   }
   // 找账号名
@@ -160,6 +179,7 @@ function renderKeys(keys) {
   tbody.innerHTML = keys.map(k => `
     <tr>
       <td><strong>${escHtml(k.name)}</strong></td>
+      <td class="text-muted">${escHtml(k.owner_username ?? k.owner_id)}</td>
       <td>${escHtml(accMap[k.account_id] || k.account_id)}</td>
       <td class="monospace">${escHtml(k.masked_key || k.key)}</td>
       <td>${k.enabled ? '<span class="badge enabled">启用</span>' : '<span class="badge disabled">禁用</span>'}</td>
@@ -185,10 +205,13 @@ function openCreateModal() {
 async function createKey() {
   const name = document.getElementById('new-key-name').value.trim()
   const account_id = document.getElementById('new-key-account').value
+  const owner_id = document.getElementById('new-key-owner').value
   if (!name) { toast('请填写 Key 名称', 'warning'); return }
   if (!account_id) { toast('请选择关联账号', 'warning'); return }
+  const body = { name, account_id }
+  if (owner_id) body.owner_id = owner_id
   try {
-    const key = await api.post('/keys', { name, account_id })
+    const key = await api.post('/keys', body)
     revealedKey = key.key
     document.getElementById('key-reveal-value').textContent = key.key
     closeModal('modal-create-key')
@@ -264,7 +287,7 @@ async function deleteKey(id, name, btn) {
 async function init() {
   await Promise.all([checkAuth(), loadSidebar('/ui/keys.html')])
   requireAdmin()
-  await loadAccountOptions()
+  await Promise.all([loadAccountOptions(), loadUserOptions()])
   await loadKeys()
 }
 

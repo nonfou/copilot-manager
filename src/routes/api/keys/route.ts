@@ -16,7 +16,7 @@ keyRoutes.get("/", (c) => {
   const admin = isAdmin(c)
   // 非 admin 只能看到自己的 keys
   const keys = store.getKeys(admin ? undefined : userId, accountId)
-  return c.json(keys.map(maskKey))
+  return c.json(keys.map(k => withOwnerUsername(maskKey(k), admin)))
 })
 
 // ─── 创建 Key ──────────────────────────────────────────────────────────────
@@ -24,10 +24,11 @@ keyRoutes.get("/", (c) => {
 const createKeySchema = z.object({
   name: z.string().min(1),
   account_id: z.string().min(1),
+  owner_id: z.string().optional(), // admin 可指定归属用户
 })
 
 keyRoutes.post("/", zValidator("json", createKeySchema), (c) => {
-  const { name, account_id } = c.req.valid("json")
+  const { name, account_id, owner_id: requestedOwnerId } = c.req.valid("json")
   const userId = getCurrentUserId(c)
   const admin = isAdmin(c)
 
@@ -35,10 +36,18 @@ keyRoutes.post("/", zValidator("json", createKeySchema), (c) => {
     return c.json({ error: "Not authenticated" }, 401)
   }
 
-  // 检查账户是否存在且用户有权限
+  // 检查账户是否存在且用户有权限（admin 可操作所有账号）
   const account = store.getAccountById(account_id, admin ? undefined : userId)
   if (!account) {
     return c.json({ error: "Account not found or no permission" }, 404)
+  }
+
+  // 确定 owner_id：admin 可指定目标用户，否则继承账号所有者
+  let targetOwnerId = account.owner_id
+  if (admin && requestedOwnerId) {
+    const targetUser = store.getUserById(requestedOwnerId)
+    if (!targetUser) return c.json({ error: "Target user not found" }, 404)
+    targetOwnerId = requestedOwnerId
   }
 
   const rawKey = generateApiKey()
@@ -47,7 +56,7 @@ keyRoutes.post("/", zValidator("json", createKeySchema), (c) => {
     key: rawKey,
     name,
     account_id,
-    owner_id: account.owner_id, // 继承账户的 owner_id
+    owner_id: targetOwnerId,
     enabled: true,
     request_count: 0,
     last_used_at: null,
@@ -69,7 +78,7 @@ keyRoutes.get("/:id", (c) => {
   if (!key) return c.json({ error: "Key not found or no permission" }, 404)
   const account = store.getAccountById(key.account_id)
   return c.json({
-    ...maskKey(key),
+    ...withOwnerUsername(maskKey(key), admin),
     account: account
       ? { id: account.id, name: account.name, account_type: account.account_type, api_url: account.api_url }
       : null,
@@ -123,9 +132,14 @@ keyRoutes.post("/:id/regenerate", (c) => {
 // ─── 工具函数 ────────────────────────────────────────────────────────────────
 
 function maskKey(key: ApiKey): ApiKey & { masked_key: string } {
-  // 保留前缀 sk-ant-api03- 及后几位，例：sk-ant-api03-AbCd...wxyz
   const masked = key.key.length > 20
     ? `${key.key.slice(0, 16)}...${key.key.slice(-4)}`
     : "****"
   return { ...key, key: masked, masked_key: masked }
+}
+
+function withOwnerUsername<T extends ApiKey>(key: T, admin: boolean): T & { owner_username?: string } {
+  if (!admin) return key
+  const owner = store.getUserById(key.owner_id)
+  return { ...key, owner_username: owner?.username ?? key.owner_id }
 }
