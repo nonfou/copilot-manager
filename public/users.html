@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>用户管理 - Copilot Manager</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="layout">
+  <!-- 侧边栏 -->
+  <nav class="sidebar" id="sidebar"></nav>
+
+  <!-- 主内容 -->
+  <main class="main">
+    <div class="page-header">
+      <h2>用户管理</h2>
+      <button class="btn btn-primary" onclick="openModal('create-user-modal')">+ 创建用户</button>
+    </div>
+
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>用户名</th>
+            <th>角色</th>
+            <th>创建时间</th>
+            <th>最后登录</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="users-table">
+          <tr><td colspan="5" class="table-empty">加载中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- 创建用户 Modal -->
+<div id="create-user-modal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>创建用户</h3>
+      <button class="modal-close" onclick="closeModal('create-user-modal')">&times;</button>
+    </div>
+    <form id="create-user-form">
+      <div class="form-group">
+        <label>用户名</label>
+        <input type="text" id="new-username" required minlength="3" maxlength="32">
+      </div>
+      <div class="form-group">
+        <label>密码</label>
+        <input type="password" id="new-password" required minlength="6">
+      </div>
+      <div class="form-group">
+        <label>角色</label>
+        <select id="new-role">
+          <option value="user">普通用户</option>
+          <option value="admin">管理员</option>
+        </select>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('create-user-modal')">取消</button>
+        <button type="submit" class="btn btn-primary">创建</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 重置密码 Modal -->
+<div id="reset-password-modal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>重置密码</h3>
+      <button class="modal-close" onclick="closeModal('reset-password-modal')">&times;</button>
+    </div>
+    <form id="reset-password-form">
+      <input type="hidden" id="reset-user-id">
+      <div class="form-group">
+        <label>新密码</label>
+        <input type="password" id="reset-new-password" required minlength="6">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('reset-password-modal')">取消</button>
+        <button type="submit" class="btn btn-primary">确认重置</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+let currentUser = null
+
+// 加载侧边栏
+async function loadSidebar() {
+  try {
+    const res = await fetch('/ui/sidebar.html')
+    const html = await res.text()
+    document.getElementById('sidebar').innerHTML = html
+    // 高亮当前页
+    document.querySelectorAll('.nav-item').forEach(el => {
+      if (el.getAttribute('href') === '/ui/users.html') {
+        el.classList.add('active')
+      } else {
+        el.classList.remove('active')
+      }
+    })
+  } catch (err) {
+    console.error('Failed to load sidebar:', err)
+  }
+}
+
+// 加载用户列表
+async function loadUsers() {
+  try {
+    const data = await api.get('/users')
+    currentUser = data.current_user
+    const tbody = document.getElementById('users-table')
+
+    if (!data.users.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="table-empty">暂无用户</td></tr>'
+      return
+    }
+
+    tbody.innerHTML = data.users.map(user => `
+      <tr>
+        <td>${escHtml(user.username)}</td>
+        <td>${user.role === 'admin' ? '<span class="badge">admin</span>' : 'user'}</td>
+        <td class="text-muted">${formatDate(user.created_at)}</td>
+        <td class="text-muted">${user.last_login_at ? formatDate(user.last_login_at) : '-'}</td>
+        <td>
+          <button class="btn btn-secondary btn-sm" onclick="openResetPassword('${user.id}')">重置密码</button>
+          ${user.id !== currentUser?.id ? `<button class="btn btn-danger btn-sm" onclick="deleteUser('${user.id}', '${escHtml(user.username)}')">删除</button>` : ''}
+        </td>
+      </tr>
+    `).join('')
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
+// 创建用户
+document.getElementById('create-user-form').addEventListener('submit', async (e) => {
+  e.preventDefault()
+  const username = document.getElementById('new-username').value.trim()
+  const password = document.getElementById('new-password').value
+  const role = document.getElementById('new-role').value
+
+  try {
+    await api.post('/users', { username, password, role })
+    closeModal('create-user-modal')
+    toast('用户创建成功', 'success')
+    loadUsers()
+    e.target.reset()
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+})
+
+// 打开重置密码 modal
+function openResetPassword(userId) {
+  document.getElementById('reset-user-id').value = userId
+  document.getElementById('reset-new-password').value = ''
+  openModal('reset-password-modal')
+}
+
+// 重置密码
+document.getElementById('reset-password-form').addEventListener('submit', async (e) => {
+  e.preventDefault()
+  const userId = document.getElementById('reset-user-id').value
+  const newPassword = document.getElementById('reset-new-password').value
+
+  try {
+    await api.post(`/users/${userId}/reset-password`, { new_password: newPassword })
+    closeModal('reset-password-modal')
+    toast('密码已重置', 'success')
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+})
+
+// 删除用户
+async function deleteUser(userId, username) {
+  if (!confirm(`确定删除用户 "${username}"？此操作不可恢复。`)) return
+
+  try {
+    await api.delete(`/users/${userId}`)
+    toast('用户已删除', 'success')
+    loadUsers()
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
+// 初始化
+loadSidebar()
+loadUsers()
+</script>
+</body>
+</html>

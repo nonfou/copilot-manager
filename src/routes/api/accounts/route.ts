@@ -5,6 +5,7 @@ import consola from "consola"
 import * as store from "../../../store/store"
 import * as processManager from "../../../lib/process-manager"
 import { generateId } from "../../../lib/crypto"
+import { getCurrentUserId, isAdmin } from "../../../middleware/auth"
 import type { Account, AccountType, AuthSession } from "../../../store/types"
 
 export const accountRoutes = new Hono()
@@ -12,7 +13,10 @@ export const accountRoutes = new Hono()
 // ─── 列表 ───────────────────────────────────────────────────────────────────
 
 accountRoutes.get("/", (c) => {
-  const accounts = store.getAccounts()
+  const userId = getCurrentUserId(c)
+  const admin = isAdmin(c)
+  // 非 admin 只能看到自己的账号
+  const accounts = store.getAccounts(admin ? undefined : userId)
   const result = accounts.map((acc) => {
     const runtime = store.getRuntime(acc.id)
     return {
@@ -38,11 +42,16 @@ const createAccountSchema = z.object({
 
 accountRoutes.post("/", zValidator("json", createAccountSchema), (c) => {
   const body = c.req.valid("json")
+  const userId = getCurrentUserId(c)
+  if (!userId) {
+    return c.json({ error: "Not authenticated" }, 401)
+  }
   const account: Account = {
     id: generateId("acc"),
     name: body.name,
     github_token: body.github_token,
     account_type: body.account_type as AccountType,
+    owner_id: userId,
     created_at: new Date().toISOString(),
   }
   store.addAccount(account)
@@ -60,8 +69,11 @@ const updateAccountSchema = z.object({
 accountRoutes.put("/:id", zValidator("json", updateAccountSchema), (c) => {
   const id = c.req.param("id")
   const body = c.req.valid("json")
-  const updated = store.updateAccount(id, body)
-  if (!updated) return c.json({ error: "Account not found" }, 404)
+  const userId = getCurrentUserId(c)
+  const admin = isAdmin(c)
+  // 非 admin 只能更新自己的账号
+  const updated = store.updateAccount(id, body, admin ? undefined : userId)
+  if (!updated) return c.json({ error: "Account not found or no permission" }, 404)
   return c.json({ ...updated, github_token: maskToken(updated.github_token) })
 })
 
@@ -69,18 +81,25 @@ accountRoutes.put("/:id", zValidator("json", updateAccountSchema), (c) => {
 
 accountRoutes.delete("/:id", (c) => {
   const id = c.req.param("id")
+  const userId = getCurrentUserId(c)
+  const admin = isAdmin(c)
+  // 检查权限
+  const account = store.getAccountById(id, admin ? undefined : userId)
+  if (!account) {
+    return c.json({ error: "Account not found or no permission" }, 404)
+  }
   // 先停止进程
   const runtime = store.getRuntime(id)
   if (runtime?.status === "running" || runtime?.status === "starting") {
     processManager.stopProcess(id)
   }
   // 删除关联 keys
-  const keys = store.getKeys(id)
+  const keys = store.getKeys(admin ? undefined : userId, id)
   for (const key of keys) {
-    store.deleteKey(key.id)
+    store.deleteKey(key.id, admin ? undefined : userId)
   }
-  const deleted = store.deleteAccount(id)
-  if (!deleted) return c.json({ error: "Account not found" }, 404)
+  const deleted = store.deleteAccount(id, admin ? undefined : userId)
+  if (!deleted) return c.json({ error: "Delete failed" }, 500)
   return c.json({ success: true })
 })
 
@@ -88,8 +107,10 @@ accountRoutes.delete("/:id", (c) => {
 
 accountRoutes.post("/:id/start", async (c) => {
   const id = c.req.param("id")
-  const account = store.getAccountById(id)
-  if (!account) return c.json({ error: "Account not found" }, 404)
+  const userId = getCurrentUserId(c)
+  const admin = isAdmin(c)
+  const account = store.getAccountById(id, admin ? undefined : userId)
+  if (!account) return c.json({ error: "Account not found or no permission" }, 404)
 
   try {
     await processManager.startProcess(account)
@@ -105,8 +126,10 @@ accountRoutes.post("/:id/start", async (c) => {
 
 accountRoutes.post("/:id/stop", (c) => {
   const id = c.req.param("id")
-  const account = store.getAccountById(id)
-  if (!account) return c.json({ error: "Account not found" }, 404)
+  const userId = getCurrentUserId(c)
+  const admin = isAdmin(c)
+  const account = store.getAccountById(id, admin ? undefined : userId)
+  if (!account) return c.json({ error: "Account not found or no permission" }, 404)
   processManager.stopProcess(id)
   return c.json({ success: true })
 })
@@ -120,6 +143,10 @@ const authStartSchema = z.object({
 
 accountRoutes.post("/auth/start", zValidator("json", authStartSchema), async (c) => {
   const { name, account_type } = c.req.valid("json")
+  const userId = getCurrentUserId(c)
+  if (!userId) {
+    return c.json({ error: "Not authenticated" }, 401)
+  }
 
   try {
     // 调用 GitHub Device Flow API
@@ -153,6 +180,7 @@ accountRoutes.post("/auth/start", zValidator("json", authStartSchema), async (c)
       device_code: data.device_code,
       name,
       account_type: account_type as AccountType,
+      owner_id: userId,
       interval: data.interval ?? 5,
       started_at: new Date().toISOString(),
       expires_at: new Date(Date.now() + data.expires_in * 1000).toISOString(),
@@ -228,6 +256,7 @@ accountRoutes.get("/auth/poll/:auth_id", async (c) => {
         name: session.name,
         github_token: data.access_token,
         account_type: session.account_type,
+        owner_id: session.owner_id,
         created_at: new Date().toISOString(),
       }
       store.addAccount(account)

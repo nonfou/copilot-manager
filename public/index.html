@@ -9,16 +9,7 @@
 <body>
 <div class="layout">
   <!-- 侧边栏 -->
-  <nav class="sidebar">
-    <div class="sidebar-logo">
-      <h1>🤖 Copilot Manager</h1>
-      <p>多账号代理管理</p>
-    </div>
-    <a href="/ui/" class="nav-item active"><span class="icon">📊</span>仪表盘</a>
-    <a href="/ui/accounts.html" class="nav-item"><span class="icon">👤</span>账号管理</a>
-    <a href="/ui/keys.html" class="nav-item"><span class="icon">🔑</span>Key 管理</a>
-    <a href="/ui/logs.html" class="nav-item"><span class="icon">📋</span>请求日志</a>
-  </nav>
+  <nav class="sidebar" id="sidebar"></nav>
 
   <!-- 主内容 -->
   <main class="main">
@@ -79,6 +70,25 @@
 
 <script src="app.js"></script>
 <script>
+// 加载侧边栏
+async function loadSidebar() {
+  try {
+    const res = await fetch('/ui/sidebar.html')
+    const html = await res.text()
+    document.getElementById('sidebar').innerHTML = html
+    // 高亮当前页
+    document.querySelectorAll('.nav-item').forEach(el => {
+      if (el.getAttribute('href') === '/ui/' || el.getAttribute('href') === '/ui') {
+        el.classList.add('active')
+      } else {
+        el.classList.remove('active')
+      }
+    })
+  } catch (err) {
+    console.error('Failed to load sidebar:', err)
+  }
+}
+
 async function loadData() {
   try {
     const [stats, logsRes] = await Promise.all([
@@ -113,9 +123,16 @@ async function loadData() {
   }
 }
 
-loadData()
-// 每 30s 自动刷新
-setInterval(loadData, 30_000)
+// 初始化
+async function init() {
+  await checkAuth()
+  await loadSidebar()
+  await loadData()
+  // 每 30s 自动刷新
+  setInterval(loadData, 30_000)
+}
+
+init()
 </script>
 </body>
 </html>

@@ -2,12 +2,39 @@
 
 export type AccountType = "individual" | "business" | "enterprise"
 export type AccountStatus = "stopped" | "running" | "starting" | "error"
+export type UserRole = "admin" | "user"
+
+// 用户类型
+export interface User {
+  id: string
+  username: string
+  password_hash: string
+  role: UserRole
+  created_at: string
+  created_by: string | null  // 创建者 user_id（admin 创建的记录是谁创建的）
+  last_login_at: string | null
+}
+
+// 用户会话
+export interface UserSession {
+  session_id: string
+  user_id: string
+  created_at: string
+  expires_at: string
+}
+
+// 系统配置
+export interface SystemConfig {
+  initialized: boolean
+  admin_created_at: string | null
+}
 
 export interface Account {
   id: string
   name: string
   github_token: string
   account_type: AccountType
+  owner_id: string  // 所属用户 ID
   created_at: string
 }
 
@@ -16,7 +43,7 @@ export interface AccountRuntime {
   status: AccountStatus
   pid?: number
   error?: string
-  startedAt?: string
+  started_at?: string
   restartCount: number
 }
 
@@ -25,6 +52,7 @@ export interface ApiKey {
   key: string
   name: string
   account_id: string
+  owner_id: string  // 所属用户 ID
   enabled: boolean
   request_count: number
   last_used_at: string | null
@@ -50,6 +78,7 @@ export interface AuthSession {
   device_code: string
   name: string
   account_type: AccountType
+  owner_id: string  // 发起认证的用户 ID
   interval: number
   started_at: string
   expires_at: string

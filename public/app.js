@@ -2,7 +2,11 @@
 
 const api = {
   async get(path) {
-    const res = await fetch(`/api${path}`)
+    const res = await fetch(`/api${path}`, { credentials: 'same-origin' })
+    if (res.status === 401) {
+      window.location.href = '/ui/login.html'
+      throw new Error('Not authenticated')
+    }
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText }))
       throw new Error(err.error || res.statusText)
@@ -13,8 +17,13 @@ const api = {
     const res = await fetch(`/api${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: body ? JSON.stringify(body) : undefined,
     })
+    if (res.status === 401) {
+      window.location.href = '/ui/login.html'
+      throw new Error('Not authenticated')
+    }
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText }))
       throw new Error(err.error || res.statusText)
@@ -25,8 +34,13 @@ const api = {
     const res = await fetch(`/api${path}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify(body),
     })
+    if (res.status === 401) {
+      window.location.href = '/ui/login.html'
+      throw new Error('Not authenticated')
+    }
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText }))
       throw new Error(err.error || res.statusText)
@@ -34,13 +48,58 @@ const api = {
     return res.json()
   },
   async delete(path) {
-    const res = await fetch(`/api${path}`, { method: 'DELETE' })
+    const res = await fetch(`/api${path}`, {
+      method: 'DELETE',
+      credentials: 'same-origin',
+    })
+    if (res.status === 401) {
+      window.location.href = '/ui/login.html'
+      throw new Error('Not authenticated')
+    }
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText }))
       throw new Error(err.error || res.statusText)
     }
     return res.json()
   },
+}
+
+// ─── 认证相关 ─────────────────────────────────────────────────────────────
+
+let currentUser = null
+
+async function checkAuth() {
+  try {
+    const data = await api.get('/auth/me')
+    currentUser = data
+    updateUIForUser(data)
+    return data
+  } catch (err) {
+    return null
+  }
+}
+
+function updateUIForUser(user) {
+  // 更新用户信息显示
+  const usernameEl = document.getElementById('current-username')
+  const roleEl = document.getElementById('current-role')
+  if (usernameEl) usernameEl.textContent = user.username
+  if (roleEl) roleEl.textContent = user.role
+
+  // Admin 显示用户管理菜单
+  const usersNav = document.getElementById('users-nav')
+  if (usersNav) {
+    usersNav.classList.toggle('hidden', user.role !== 'admin')
+  }
+}
+
+async function logout() {
+  try {
+    await api.post('/auth/logout')
+    window.location.href = '/ui/login.html'
+  } catch (err) {
+    toast('登出失败: ' + err.message, 'error')
+  }
 }
 
 // ─── Toast 通知 ────────────────────────────────────────────────────────────
@@ -139,3 +198,6 @@ window.statusCodeBadge = statusCodeBadge
 window.copyToClipboard = copyToClipboard
 window.openModal = openModal
 window.closeModal = closeModal
+window.checkAuth = checkAuth
+window.logout = logout
+window.getCurrentUser = () => currentUser
