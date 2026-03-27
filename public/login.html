@@ -127,23 +127,25 @@
 <script>
 async function checkStatus() {
   try {
-    const res = await fetch('/api/auth/status', { credentials: 'same-origin' })
-    const data = await res.json()
+    // 先检查系统是否已初始化
+    const statusRes = await fetch('/api/auth/status', { credentials: 'same-origin' })
+    const status = await statusRes.json()
 
-    if (data.user) {
-      // 已登录，跳转到首页
-      window.location.href = '/ui/'
-      return
-    }
-
-    if (!data.initialized) {
-      // 系统未初始化，禁用登录表单
+    if (!status.initialized) {
       document.getElementById('setup-notice').style.display = 'block'
       document.getElementById('login-subtitle').textContent = '系统未初始化'
       document.getElementById('submit-btn').textContent = '系统未初始化'
       document.getElementById('submit-btn').disabled = true
       document.getElementById('username').disabled = true
       document.getElementById('password').disabled = true
+      return
+    }
+
+    // 再检查当前 session（通过 Cookie）
+    const meRes = await fetch('/api/auth/me', { credentials: 'same-origin' })
+    if (meRes.ok) {
+      // 已登录，跳转到首页
+      window.location.href = '/ui/'
     }
   } catch (err) {
     console.error('Status check failed:', err)

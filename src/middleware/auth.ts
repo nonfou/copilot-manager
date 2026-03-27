@@ -44,6 +44,11 @@ export async function authMiddleware(c: Context, next: Next) {
     return next()
   }
 
+  // login.html 本身不需要认证（避免重定向到自身产生无限循环）
+  if (path === "/ui/login.html") {
+    return next()
+  }
+
   // 3. UI 静态文件 + 管理 API - Session 认证
   if (path.startsWith("/ui") || path.startsWith("/api/")) {
     const sessionId = getCookie(c, "cm_session")
