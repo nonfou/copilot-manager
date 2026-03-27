@@ -1,5 +1,26 @@
-data/
+# Dependencies
 node_modules/
+
+# Build output
 dist/
-bun.lockb
+
+# Data (user data, should not be committed)
+data/
+
+# Bun
 .bun-cache/
+bun.lockb
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
