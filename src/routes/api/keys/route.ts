@@ -106,8 +106,9 @@ keyRoutes.post("/:id/regenerate", (c) => {
 // ─── 工具函数 ────────────────────────────────────────────────────────────────
 
 function maskKey(key: ApiKey): ApiKey & { masked_key: string } {
-  const masked = key.key.length > 10
-    ? `${key.key.slice(0, 6)}...${key.key.slice(-4)}`
+  // 保留前缀 sk-ant-api03- 及后几位，例：sk-ant-api03-AbCd...wxyz
+  const masked = key.key.length > 20
+    ? `${key.key.slice(0, 16)}...${key.key.slice(-4)}`
     : "****"
   return { ...key, key: masked, masked_key: masked }
 }

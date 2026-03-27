@@ -105,8 +105,7 @@ async function loadData() {
 
 // 初始化
 async function init() {
-  await checkAuth()
-  await loadSidebar('/ui/')
+  await Promise.all([checkAuth(), loadSidebar('/ui/')])
   await loadData()
   // 每 15s 自动刷新
   setInterval(loadData, 15_000)

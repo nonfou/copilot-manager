@@ -12,9 +12,10 @@ export function generateId(prefix: string): string {
 
 /**
  * 生成 API Key
- * 格式: cm- + 48 位 hex（共 51 字符）
+ * 格式: sk-ant-api03- + 40字节 base64url（与 Claude API Key 格式一致，兼容 Claude Code 等客户端）
  */
 export function generateApiKey(): string {
-  const bytes = randomBytes(24)
-  return `cm-${bytes.toString("hex")}`
+  const bytes = randomBytes(40)
+  // base64url: 去掉 +/= 改为 -_，避免 URL/Header 中需要转义
+  return `sk-ant-api03-${bytes.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")}`
 }

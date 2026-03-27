@@ -520,8 +520,7 @@ function toggleVis(inputId, btn) {
 // ─── 初始化 ────────────────────────────────────────────────────────────────
 
 async function init() {
-  await checkAuth()
-  await loadSidebar('/ui/accounts.html')
+  await Promise.all([checkAuth(), loadSidebar('/ui/accounts.html')])
   await loadAccounts()
 }
 
