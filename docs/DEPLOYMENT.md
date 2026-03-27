@@ -16,6 +16,16 @@ bun --version
 
 ---
 
+## 直接运行
+
+```bash
+bun install
+bun run build
+bun run dist/main.js start --port 3000
+```
+
+---
+
 ## PM2 后台运行
 
 ```bash
