@@ -7,6 +7,125 @@
 - **内存**: >= 512MB
 - **磁盘**: >= 1GB
 
+## 安装 Bun
+
+Bun 是一个高性能的 JavaScript 运行时，本项目的必需依赖。
+
+### Linux / macOS
+
+```bash
+# 使用 curl 安装
+curl -fsSL https://bun.sh/install | bash
+
+# 使环境变量生效
+source ~/.bashrc
+# 或 zsh
+source ~/.zshrc
+```
+
+### Windows
+
+**方式一：PowerShell（推荐）**
+
+```powershell
+powershell -c "irm bun.sh/install.ps1 | iex"
+```
+
+**方式二：使用 npm**
+
+```bash
+npm install -g bun
+```
+
+**方式三：使用 Scoop**
+
+```bash
+scoop install bun
+```
+
+### 使用包管理器安装
+
+**macOS (Homebrew)**
+
+```bash
+brew tap oven-sh/bun
+brew install oven-sh/bun/bun
+```
+
+**Linux (apt)**
+
+```bash
+curl -fsSL https://apt.oven.sh | sudo bash
+sudo apt install bun
+```
+
+**Linux (dnf/yum)**
+
+```bash
+curl -fsSL https://rpm.oven.sh | sudo bash
+sudo dnf install bun
+```
+
+**Linux (pacman)**
+
+```bash
+pacman -S bun
+```
+
+### 使用 Docker
+
+```bash
+# 拉取官方镜像
+docker pull oven/bun:1
+
+# 运行
+docker run --rm oven/bun:1 bun --version
+```
+
+### 验证安装
+
+```bash
+# 查看版本
+bun --version
+
+# 预期输出类似
+# 1.x.x
+```
+
+### 升级 Bun
+
+```bash
+# 升级到最新版本
+bun upgrade
+
+# 升级到指定版本
+bun upgrade bun@1.2.0
+```
+
+### 常见安装问题
+
+**问题：command not found: bun**
+
+```bash
+# 手动添加到 PATH
+export PATH="$HOME/.bun/bin:$PATH"
+
+# 永久生效，添加到 shell 配置文件
+echo 'export PATH="$HOME/.bun/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+**问题：权限不足**
+
+```bash
+# Linux/macOS 使用 sudo
+sudo curl -fsSL https://bun.sh/install | bash
+
+# Windows 以管理员身份运行 PowerShell
+```
+
+---
+
 ## 目录结构
 
 ```
