@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>请求日志 - Copilot Manager</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <div class="sidebar-logo">
+      <h1>🤖 Copilot Manager</h1>
+      <p>多账号代理管理</p>
+    </div>
+    <a href="/ui/" class="nav-item"><span class="icon">📊</span>仪表盘</a>
+    <a href="/ui/accounts.html" class="nav-item"><span class="icon">👤</span>账号管理</a>
+    <a href="/ui/keys.html" class="nav-item"><span class="icon">🔑</span>Key 管理</a>
+    <a href="/ui/logs.html" class="nav-item active"><span class="icon">📋</span>请求日志</a>
+  </nav>
+
+  <main class="main">
+    <div class="page-header">
+      <h2>请求日志</h2>
+      <p>最近 500 条代理请求记录</p>
+    </div>
+
+    <div class="card">
+      <div class="filter-bar">
+        <span class="table-title">日志列表</span>
+        <select class="form-select" id="filter-account" onchange="loadLogs(1)">
+          <option value="">所有账号</option>
+        </select>
+        <button class="btn btn-secondary btn-sm" onclick="loadLogs(currentPage)">刷新</button>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>时间</th>
+            <th>账号</th>
+            <th>Key 名称</th>
+            <th>方法</th>
+            <th>路径</th>
+            <th>状态码</th>
+            <th>耗时</th>
+            <th>错误</th>
+          </tr>
+        </thead>
+        <tbody id="logs-table">
+          <tr><td colspan="8" class="table-empty">加载中...</td></tr>
+        </tbody>
+      </table>
+
+      <div class="pagination">
+        <button class="btn btn-secondary btn-sm" onclick="loadLogs(currentPage - 1)" id="btn-prev">上一页</button>
+        <span id="page-info">-</span>
+        <button class="btn btn-secondary btn-sm" onclick="loadLogs(currentPage + 1)" id="btn-next">下一页</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="app.js"></script>
+<script>
+let currentPage = 1
+const pageSize = 50
+
+async function loadAccountFilter() {
+  try {
+    const accounts = await api.get('/accounts')
+    const filter = document.getElementById('filter-account')
+    filter.innerHTML = '<option value="">所有账号</option>' +
+      accounts.map(a => `<option value="${a.id}">${escHtml(a.name)}</option>`).join('')
+  } catch {}
+}
+
+async function loadLogs(page = 1) {
+  if (page < 1) return
+  currentPage = page
+  const accountId = document.getElementById('filter-account').value
+  const params = new URLSearchParams({ page: String(page), limit: String(pageSize) })
+  if (accountId) params.set('account_id', accountId)
+
+  try {
+    const res = await api.get(`/logs?${params}`)
+    renderLogs(res)
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
+function renderLogs(res) {
+  const tbody = document.getElementById('logs-table')
+  if (!res.logs.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="table-empty">暂无日志</td></tr>'
+  } else {
+    tbody.innerHTML = res.logs.map(log => `
+      <tr>
+        <td class="text-muted" style="white-space:nowrap;">${formatDate(log.created_at)}</td>
+        <td>${escHtml(log.account_name)}</td>
+        <td class="text-muted">${escHtml(log.api_key_name)}</td>
+        <td><code>${escHtml(log.method)}</code></td>
+        <td class="monospace" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;" title="${escHtml(log.path)}">${escHtml(log.path)}</td>
+        <td>${statusCodeBadge(log.status_code)}</td>
+        <td class="text-muted">${formatDuration(log.duration_ms)}</td>
+        <td class="text-error" style="max-width:120px;overflow:hidden;text-overflow:ellipsis;" title="${escHtml(log.error || '')}">${escHtml(log.error || '')}</td>
+      </tr>
+    `).join('')
+  }
+
+  // 分页信息
+  document.getElementById('page-info').textContent = `第 ${res.page} / ${res.total_pages || 1} 页（共 ${res.total} 条）`
+  document.getElementById('btn-prev').disabled = res.page <= 1
+  document.getElementById('btn-next').disabled = res.page >= (res.total_pages || 1)
+}
+
+loadAccountFilter().then(() => loadLogs(1))
+</script>
+</body>
+</html>

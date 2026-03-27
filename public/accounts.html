@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>账号管理 - Copilot Manager</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <div class="sidebar-logo">
+      <h1>🤖 Copilot Manager</h1>
+      <p>多账号代理管理</p>
+    </div>
+    <a href="/ui/" class="nav-item"><span class="icon">📊</span>仪表盘</a>
+    <a href="/ui/accounts.html" class="nav-item active"><span class="icon">👤</span>账号管理</a>
+    <a href="/ui/keys.html" class="nav-item"><span class="icon">🔑</span>Key 管理</a>
+    <a href="/ui/logs.html" class="nav-item"><span class="icon">📋</span>请求日志</a>
+  </nav>
+
+  <main class="main">
+    <div class="page-header">
+      <h2>账号管理</h2>
+      <p>管理 GitHub Copilot 账号及其子进程</p>
+    </div>
+
+    <div class="card">
+      <div class="table-header">
+        <span class="table-title">账号列表</span>
+        <div class="flex gap-2">
+          <button class="btn btn-secondary btn-sm" onclick="loadAccounts()">刷新</button>
+          <button class="btn btn-primary btn-sm" onclick="openAddModal()">+ 添加账号</button>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>名称</th>
+            <th>类型</th>
+            <th>状态</th>
+            <th>端口</th>
+            <th>重启次数</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="accounts-table">
+          <tr><td colspan="6" class="table-empty">加载中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- 添加/编辑账号 Modal -->
+<div id="modal-account" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-account-title">添加账号</span>
+      <button class="modal-close" onclick="closeModal('modal-account')">×</button>
+    </div>
+
+    <!-- 登录方式切换 -->
+    <div id="add-tabs" class="tabs">
+      <div class="tab active" onclick="switchTab('oauth')">GitHub OAuth 授权</div>
+      <div class="tab" onclick="switchTab('token')">直接粘贴 Token</div>
+    </div>
+
+    <!-- OAuth 流程 -->
+    <div id="tab-oauth">
+      <div id="oauth-form">
+        <div class="form-group">
+          <label class="form-label">账号名称</label>
+          <input class="form-input" id="oauth-name" placeholder="例：我的 Copilot 账号">
+        </div>
+        <div class="form-group">
+          <label class="form-label">账号类型</label>
+          <select class="form-select" id="oauth-type">
+            <option value="individual">个人版 (Individual)</option>
+            <option value="business">商业版 (Business)</option>
+            <option value="enterprise">企业版 (Enterprise)</option>
+          </select>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" onclick="closeModal('modal-account')">取消</button>
+          <button class="btn btn-primary" onclick="startOAuth()">GitHub 授权</button>
+        </div>
+      </div>
+
+      <div id="oauth-waiting" style="display:none;">
+        <div class="auth-box">
+          <div class="auth-url">请在浏览器中打开以下地址：</div>
+          <a id="auth-url" href="#" target="_blank" style="color: var(--primary); font-size: 13px;"></a>
+          <div class="auth-code" id="auth-code">----</div>
+          <div class="flex gap-2" style="justify-content:center;">
+            <button class="btn btn-secondary btn-sm" onclick="copyCode()">复制验证码</button>
+            <button class="btn btn-primary btn-sm" onclick="openAuthUrl()">打开浏览器</button>
+          </div>
+          <div class="auth-status" id="auth-status">
+            <span class="spinner"></span>等待授权中...
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" onclick="cancelOAuth()">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 直接 Token -->
+    <div id="tab-token" style="display:none;">
+      <div class="form-group">
+        <label class="form-label">账号名称</label>
+        <input class="form-input" id="token-name" placeholder="例：我的 Copilot 账号">
+      </div>
+      <div class="form-group">
+        <label class="form-label">账号类型</label>
+        <select class="form-select" id="token-type">
+          <option value="individual">个人版 (Individual)</option>
+          <option value="business">商业版 (Business)</option>
+          <option value="enterprise">企业版 (Enterprise)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">GitHub Token</label>
+        <div class="token-field-wrap">
+          <input class="form-input" id="token-value" type="password" placeholder="ghp_xxxxxxxxxxxx">
+          <button class="toggle-vis" onclick="toggleVis('token-value', this)">👁</button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-account')">取消</button>
+        <button class="btn btn-primary" onclick="createWithToken()">创建账号</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 编辑账号 Modal -->
+<div id="modal-edit" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">编辑账号</span>
+      <button class="modal-close" onclick="closeModal('modal-edit')">×</button>
+    </div>
+    <input type="hidden" id="edit-id">
+    <div class="form-group">
+      <label class="form-label">账号名称</label>
+      <input class="form-input" id="edit-name">
+    </div>
+    <div class="form-group">
+      <label class="form-label">账号类型</label>
+      <select class="form-select" id="edit-type">
+        <option value="individual">个人版 (Individual)</option>
+        <option value="business">商业版 (Business)</option>
+        <option value="enterprise">企业版 (Enterprise)</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">更新 GitHub Token（留空不更改）</label>
+      <div class="token-field-wrap">
+        <input class="form-input" id="edit-token" type="password" placeholder="留空不更改">
+        <button class="toggle-vis" onclick="toggleVis('edit-token', this)">👁</button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-edit')">取消</button>
+      <button class="btn btn-primary" onclick="saveEdit()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+let accounts = []
+let currentAuthId = null
+let authPollTimer = null
+let currentTab = 'oauth'
+let editingId = null
+
+// ─── 加载账号 ────────────────────────────────────────────────────────────
+
+async function loadAccounts() {
+  try {
+    accounts = await api.get('/accounts')
+    renderAccounts()
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
+function renderAccounts() {
+  const tbody = document.getElementById('accounts-table')
+  if (!accounts.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="table-empty">暂无账号，点击「添加账号」开始使用</td></tr>'
+    return
+  }
+  tbody.innerHTML = accounts.map(acc => `
+    <tr>
+      <td><strong>${escHtml(acc.name)}</strong><br><small class="text-muted monospace">${escHtml(acc.id)}</small></td>
+      <td>${escHtml(acc.account_type)}</td>
+      <td>${statusBadge(acc.status)}</td>
+      <td class="monospace text-muted">${acc.port ? acc.port : '-'}</td>
+      <td class="text-muted">${acc.restart_count}</td>
+      <td>
+        <div class="flex gap-2">
+          ${acc.status === 'running' || acc.status === 'starting'
+            ? `<button class="btn btn-danger btn-sm" onclick="stopAccount('${acc.id}')">停止</button>`
+            : `<button class="btn btn-success btn-sm" onclick="startAccount('${acc.id}')">启动</button>`}
+          <button class="btn btn-secondary btn-sm" onclick="editAccount('${acc.id}')">编辑</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteAccount('${acc.id}', '${escHtml(acc.name)}')">删除</button>
+        </div>
+      </td>
+    </tr>
+  `).join('')
+}
+
+// ─── 启动 / 停止 ─────────────────────────────────────────────────────────
+
+async function startAccount(id) {
+  try {
+    toast('正在启动...', 'info')
+    await api.post(`/accounts/${id}/start`)
+    toast('账号已启动', 'success')
+    await loadAccounts()
+  } catch (err) {
+    toast(err.message, 'error')
+    await loadAccounts()
+  }
+}
+
+async function stopAccount(id) {
+  try {
+    await api.post(`/accounts/${id}/stop`)
+    toast('账号已停止', 'success')
+    await loadAccounts()
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
+// ─── 删除 ────────────────────────────────────────────────────────────────
+
+async function deleteAccount(id, name) {
+  if (!confirm(`确认删除账号「${name}」？\n关联的所有 API Key 也将被删除。`)) return
+  try {
+    await api.delete(`/accounts/${id}`)
+    toast('账号已删除', 'success')
+    await loadAccounts()
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
+// ─── 编辑 ────────────────────────────────────────────────────────────────
+
+function editAccount(id) {
+  const acc = accounts.find(a => a.id === id)
+  if (!acc) return
+  editingId = id
+  document.getElementById('edit-id').value = id
+  document.getElementById('edit-name').value = acc.name
+  document.getElementById('edit-type').value = acc.account_type
+  document.getElementById('edit-token').value = ''
+  openModal('modal-edit')
+}
+
+async function saveEdit() {
+  const id = editingId
+  const name = document.getElementById('edit-name').value.trim()
+  const account_type = document.getElementById('edit-type').value
+  const token = document.getElementById('edit-token').value.trim()
+  if (!name) { toast('请填写账号名称', 'warning'); return }
+  const body = { name, account_type }
+  if (token) body.github_token = token
+  try {
+    await api.put(`/accounts/${id}`, body)
+    toast('保存成功', 'success')
+    closeModal('modal-edit')
+    await loadAccounts()
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
+// ─── 添加账号 Modal ───────────────────────────────────────────────────────
+
+function openAddModal() {
+  cancelOAuth()
+  document.getElementById('oauth-name').value = ''
+  document.getElementById('token-name').value = ''
+  document.getElementById('token-value').value = ''
+  switchTab('oauth')
+  document.getElementById('oauth-form').style.display = ''
+  document.getElementById('oauth-waiting').style.display = 'none'
+  openModal('modal-account')
+}
+
+function switchTab(tab) {
+  currentTab = tab
+  document.getElementById('tab-oauth').style.display = tab === 'oauth' ? '' : 'none'
+  document.getElementById('tab-token').style.display = tab === 'token' ? '' : 'none'
+  document.querySelectorAll('.tab').forEach((el, i) => {
+    el.classList.toggle('active', (i === 0 && tab === 'oauth') || (i === 1 && tab === 'token'))
+  })
+}
+
+// ─── OAuth Device Flow ────────────────────────────────────────────────────
+
+async function startOAuth() {
+  const name = document.getElementById('oauth-name').value.trim()
+  const account_type = document.getElementById('oauth-type').value
+  if (!name) { toast('请填写账号名称', 'warning'); return }
+  try {
+    const res = await api.post('/accounts/auth/start', { name, account_type })
+    currentAuthId = res.auth_id
+    document.getElementById('auth-code').textContent = res.user_code
+    document.getElementById('auth-url').href = res.verification_uri
+    document.getElementById('auth-url').textContent = res.verification_uri
+    document.getElementById('oauth-form').style.display = 'none'
+    document.getElementById('oauth-waiting').style.display = ''
+    // 开始轮询
+    authPollTimer = setInterval(() => pollAuth(res.interval), (res.interval || 5) * 1000)
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
+async function pollAuth(interval) {
+  if (!currentAuthId) return
+  try {
+    const res = await api.get(`/accounts/auth/poll/${currentAuthId}`)
+    if (res.status === 'success') {
+      cancelOAuth()
+      closeModal('modal-account')
+      toast(`账号「${res.account.name}」已添加！`, 'success')
+      await loadAccounts()
+    } else if (res.status === 'expired') {
+      cancelOAuth()
+      toast('授权已过期，请重新尝试', 'warning')
+      document.getElementById('oauth-form').style.display = ''
+      document.getElementById('oauth-waiting').style.display = 'none'
+    }
+    // pending 时什么都不做，继续等
+  } catch (err) {
+    cancelOAuth()
+    toast(err.message, 'error')
+  }
+}
+
+function cancelOAuth() {
+  if (authPollTimer) { clearInterval(authPollTimer); authPollTimer = null }
+  currentAuthId = null
+}
+
+function copyCode() {
+  const code = document.getElementById('auth-code').textContent
+  copyToClipboard(code)
+}
+
+function openAuthUrl() {
+  const url = document.getElementById('auth-url').href
+  window.open(url, '_blank')
+}
+
+// ─── 直接 Token 创建 ──────────────────────────────────────────────────────
+
+async function createWithToken() {
+  const name = document.getElementById('token-name').value.trim()
+  const account_type = document.getElementById('token-type').value
+  const github_token = document.getElementById('token-value').value.trim()
+  if (!name || !github_token) { toast('请填写所有必填项', 'warning'); return }
+  try {
+    await api.post('/accounts', { name, github_token, account_type })
+    toast('账号已创建', 'success')
+    closeModal('modal-account')
+    await loadAccounts()
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
+// ─── Token 显示/隐藏 ──────────────────────────────────────────────────────
+
+function toggleVis(inputId, btn) {
+  const input = document.getElementById(inputId)
+  if (input.type === 'password') {
+    input.type = 'text'
+    btn.textContent = '🙈'
+  } else {
+    input.type = 'password'
+    btn.textContent = '👁'
+  }
+}
+
+// ─── 初始化 ────────────────────────────────────────────────────────────────
+
+loadAccounts()
+setInterval(loadAccounts, 15_000)
+</script>
+</body>
+</html>

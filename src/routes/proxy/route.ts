@@ -1,0 +1,112 @@
+import { Hono } from "hono"
+import * as store from "../../store/store"
+import { generateId } from "../../lib/crypto"
+import type { RequestLog } from "../../store/types"
+
+export const proxyRoutes = new Hono()
+
+proxyRoutes.all("/*", async (c) => {
+  const startTime = Date.now()
+  const authHeader = c.req.header("Authorization")
+  const apiKey = authHeader?.startsWith("Bearer ")
+    ? authHeader.slice(7).trim()
+    : null
+
+  // 验证 API Key
+  if (!apiKey) {
+    return c.json({ error: "Missing Authorization header" }, 401)
+  }
+
+  const found = store.findKeyWithAccount(apiKey)
+  if (!found) {
+    return c.json({ error: "Invalid API key" }, 401)
+  }
+
+  const { key, account, runtime } = found
+
+  if (!account) {
+    return c.json({ error: "Account not found" }, 404)
+  }
+
+  if (!runtime || runtime.status !== "running") {
+    return c.json(
+      { error: `Account "${account.name}" is not running (status: ${runtime?.status ?? "stopped"})` },
+      503,
+    )
+  }
+
+  const { port } = runtime
+
+  // 构建转发请求头
+  const headers = new Headers(c.req.raw.headers)
+  headers.delete("authorization")
+  headers.delete("host")
+  headers.delete("content-length")
+
+  let upstreamResponse: Response
+  let errorMsg: string | null = null
+
+  try {
+    const reqUrl = new URL(c.req.raw.url)
+    const upstreamUrl = `http://localhost:${port}${reqUrl.pathname}${reqUrl.search}`
+
+    upstreamResponse = await fetch(upstreamUrl, {
+      method: c.req.method,
+      headers,
+      body: c.req.method !== "GET" && c.req.method !== "HEAD" ? c.req.raw.body : undefined,
+      // @ts-ignore - duplex required for streaming request bodies
+      duplex: "half",
+    })
+  } catch (err) {
+    errorMsg = err instanceof Error ? err.message : String(err)
+    // 异步记录日志
+    queueMicrotask(() => {
+      store.incrementKeyRequestCount(key.id)
+      const log: RequestLog = {
+        id: generateId("log"),
+        api_key_id: key.id,
+        account_id: account.id,
+        api_key_name: key.name,
+        account_name: account.name,
+        method: c.req.method,
+        path: c.req.path,
+        status_code: 502,
+        duration_ms: Date.now() - startTime,
+        error: errorMsg,
+        created_at: new Date().toISOString(),
+      }
+      store.appendLog(log)
+    })
+    return c.json({ error: `Upstream error: ${errorMsg}` }, 502)
+  }
+
+  const durationMs = Date.now() - startTime
+
+  // 异步记录日志（不阻塞响应）
+  queueMicrotask(() => {
+    store.incrementKeyRequestCount(key.id)
+    const log: RequestLog = {
+      id: generateId("log"),
+      api_key_id: key.id,
+      account_id: account.id,
+      api_key_name: key.name,
+      account_name: account.name,
+      method: c.req.method,
+      path: c.req.path,
+      status_code: upstreamResponse.status,
+      duration_ms: durationMs,
+      error: null,
+      created_at: new Date().toISOString(),
+    }
+    store.appendLog(log)
+  })
+
+  // 直接管道转发响应（支持 SSE 流式 + JSON）
+  const responseHeaders = new Headers(upstreamResponse.headers)
+  responseHeaders.delete("content-encoding") // 避免二次解压问题
+
+  return new Response(upstreamResponse.body, {
+    status: upstreamResponse.status,
+    headers: responseHeaders,
+  })
+})

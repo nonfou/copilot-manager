@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Key 管理 - Copilot Manager</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <div class="sidebar-logo">
+      <h1>🤖 Copilot Manager</h1>
+      <p>多账号代理管理</p>
+    </div>
+    <a href="/ui/" class="nav-item"><span class="icon">📊</span>仪表盘</a>
+    <a href="/ui/accounts.html" class="nav-item"><span class="icon">👤</span>账号管理</a>
+    <a href="/ui/keys.html" class="nav-item active"><span class="icon">🔑</span>Key 管理</a>
+    <a href="/ui/logs.html" class="nav-item"><span class="icon">📋</span>请求日志</a>
+  </nav>
+
+  <main class="main">
+    <div class="page-header">
+      <h2>Key 管理</h2>
+      <p>管理 API Keys，每个 Key 关联一个账号</p>
+    </div>
+
+    <div class="card">
+      <div class="table-header">
+        <div class="filter-bar" style="margin-bottom:0;">
+          <span class="table-title">Key 列表</span>
+          <select class="form-select" id="filter-account" onchange="loadKeys()">
+            <option value="">所有账号</option>
+          </select>
+        </div>
+        <div class="flex gap-2">
+          <button class="btn btn-secondary btn-sm" onclick="loadKeys()">刷新</button>
+          <button class="btn btn-primary btn-sm" onclick="openCreateModal()">+ 新建 Key</button>
+        </div>
+      </div>
+      <br>
+      <table>
+        <thead>
+          <tr>
+            <th>名称</th>
+            <th>关联账号</th>
+            <th>Key 值</th>
+            <th>状态</th>
+            <th>请求数</th>
+            <th>最后使用</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="keys-table">
+          <tr><td colspan="7" class="table-empty">加载中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- 新建 Key Modal -->
+<div id="modal-create-key" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">新建 API Key</span>
+      <button class="modal-close" onclick="closeModal('modal-create-key')">×</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Key 名称</label>
+      <input class="form-input" id="new-key-name" placeholder="例：Claude Code Key">
+    </div>
+    <div class="form-group">
+      <label class="form-label">关联账号</label>
+      <select class="form-select" id="new-key-account"></select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-create-key')">取消</button>
+      <button class="btn btn-primary" onclick="createKey()">创建</button>
+    </div>
+  </div>
+</div>
+
+<!-- Key 创建成功展示 Modal -->
+<div id="modal-key-reveal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Key 创建成功</span>
+      <button class="modal-close" onclick="closeModal('modal-key-reveal')">×</button>
+    </div>
+    <p>请立即复制并保存以下 API Key，<strong>它只会显示一次</strong>：</p>
+    <div class="key-reveal" id="key-reveal-value"></div>
+    <div class="key-reveal-note">⚠️ 离开此页面后将无法再次查看完整 Key 值</div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="copyRevealedKey()">复制 Key</button>
+      <button class="btn btn-secondary" onclick="closeModal('modal-key-reveal')">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 编辑 Key Modal -->
+<div id="modal-edit-key" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">编辑 Key</span>
+      <button class="modal-close" onclick="closeModal('modal-edit-key')">×</button>
+    </div>
+    <input type="hidden" id="edit-key-id">
+    <div class="form-group">
+      <label class="form-label">Key 名称</label>
+      <input class="form-input" id="edit-key-name">
+    </div>
+    <div class="form-group">
+      <label class="form-label">状态</label>
+      <select class="form-select" id="edit-key-enabled">
+        <option value="true">启用</option>
+        <option value="false">禁用</option>
+      </select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-edit-key')">取消</button>
+      <button class="btn btn-primary" onclick="saveKeyEdit()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+let accounts = []
+let revealedKey = ''
+
+async function loadAccountOptions() {
+  try {
+    accounts = await api.get('/accounts')
+    const filter = document.getElementById('filter-account')
+    const select = document.getElementById('new-key-account')
+    // 过滤器下拉
+    filter.innerHTML = '<option value="">所有账号</option>' +
+      accounts.map(a => `<option value="${a.id}">${escHtml(a.name)}</option>`).join('')
+    // 创建 Key 下拉
+    select.innerHTML = accounts.length
+      ? accounts.map(a => `<option value="${a.id}">${escHtml(a.name)}</option>`).join('')
+      : '<option value="">（暂无账号，请先添加）</option>'
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
+async function loadKeys() {
+  const accountId = document.getElementById('filter-account').value
+  try {
+    const keys = await api.get(`/keys${accountId ? `?account_id=${accountId}` : ''}`)
+    renderKeys(keys)
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
+function renderKeys(keys) {
+  const tbody = document.getElementById('keys-table')
+  if (!keys.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="table-empty">暂无 Key，点击「新建 Key」添加</td></tr>'
+    return
+  }
+  // 找账号名
+  const accMap = {}
+  accounts.forEach(a => { accMap[a.id] = a.name })
+
+  tbody.innerHTML = keys.map(k => `
+    <tr>
+      <td><strong>${escHtml(k.name)}</strong></td>
+      <td>${escHtml(accMap[k.account_id] || k.account_id)}</td>
+      <td class="monospace">${escHtml(k.masked_key || k.key)}</td>
+      <td>${k.enabled ? '<span class="badge enabled">启用</span>' : '<span class="badge disabled">禁用</span>'}</td>
+      <td class="text-muted">${k.request_count}</td>
+      <td class="text-muted">${formatDate(k.last_used_at)}</td>
+      <td>
+        <div class="flex gap-2">
+          <button class="btn btn-secondary btn-sm" onclick="editKey('${k.id}', ${JSON.stringify(k.name)}, ${k.enabled})">编辑</button>
+          <button class="btn btn-secondary btn-sm" onclick="regenerateKey('${k.id}', ${JSON.stringify(k.name)})">重新生成</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteKey('${k.id}', ${JSON.stringify(k.name)})">删除</button>
+        </div>
+      </td>
+    </tr>
+  `).join('')
+}
+
+function openCreateModal() {
+  document.getElementById('new-key-name').value = ''
+  openModal('modal-create-key')
+}
+
+async function createKey() {
+  const name = document.getElementById('new-key-name').value.trim()
+  const account_id = document.getElementById('new-key-account').value
+  if (!name) { toast('请填写 Key 名称', 'warning'); return }
+  if (!account_id) { toast('请选择关联账号', 'warning'); return }
+  try {
+    const key = await api.post('/keys', { name, account_id })
+    revealedKey = key.key
+    document.getElementById('key-reveal-value').textContent = key.key
+    closeModal('modal-create-key')
+    openModal('modal-key-reveal')
+    await loadKeys()
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
+function copyRevealedKey() {
+  copyToClipboard(revealedKey)
+}
+
+function editKey(id, name, enabled) {
+  document.getElementById('edit-key-id').value = id
+  document.getElementById('edit-key-name').value = name
+  document.getElementById('edit-key-enabled').value = String(enabled)
+  openModal('modal-edit-key')
+}
+
+async function saveKeyEdit() {
+  const id = document.getElementById('edit-key-id').value
+  const name = document.getElementById('edit-key-name').value.trim()
+  const enabled = document.getElementById('edit-key-enabled').value === 'true'
+  if (!name) { toast('请填写 Key 名称', 'warning'); return }
+  try {
+    await api.put(`/keys/${id}`, { name, enabled })
+    toast('保存成功', 'success')
+    closeModal('modal-edit-key')
+    await loadKeys()
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
+async function regenerateKey(id, name) {
+  if (!confirm(`确认重新生成 Key「${name}」？\n旧的 Key 将立即失效。`)) return
+  try {
+    const key = await api.post(`/keys/${id}/regenerate`)
+    revealedKey = key.key
+    document.getElementById('key-reveal-value').textContent = key.key
+    openModal('modal-key-reveal')
+    await loadKeys()
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
+async function deleteKey(id, name) {
+  if (!confirm(`确认删除 Key「${name}」？`)) return
+  try {
+    await api.delete(`/keys/${id}`)
+    toast('Key 已删除', 'success')
+    await loadKeys()
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
+// 初始化
+loadAccountOptions().then(() => loadKeys())
+</script>
+</body>
+</html>
