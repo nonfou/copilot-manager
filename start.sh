@@ -18,7 +18,6 @@ while [[ $# -gt 0 ]]; do
     *) shift ;;
   esac
 done
-PORT="${_PORT:-${PORT:-4242}}"
 
 # ─── 检查 .env ───────────────────────────────────────────────────────────────
 if [ ! -f ".env" ]; then
@@ -27,6 +26,13 @@ if [ ! -f ".env" ]; then
   echo "[warn] 请先编辑 .env 设置 ADMIN_USERNAME / ADMIN_PASSWORD / ENCRYPTION_KEY，然后重新运行此脚本"
   exit 1
 fi
+
+# 从 .env 中读取 PORT（仅当命令行和 shell 环境均未指定时生效）
+if [ -z "$_PORT" ] && [ -z "${PORT+x}" ]; then
+  _ENV_PORT="$(grep -E '^PORT=' .env | head -1 | cut -d= -f2- | tr -d '[:space:]')"
+  [ -n "$_ENV_PORT" ] && PORT="$_ENV_PORT"
+fi
+PORT="${PORT:-4242}"
 
 # ─── 安装依赖 & 构建 ─────────────────────────────────────────────────────────
 echo "[info] 安装依赖..."
