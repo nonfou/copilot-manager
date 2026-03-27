@@ -6,6 +6,8 @@ import { serve, type ServerHandler } from "srvx"
 import * as store from "./store/store"
 import * as processManager from "./lib/process-manager"
 import { server } from "./server"
+import { hashPassword } from "./lib/password"
+import { randomBytes } from "node:crypto"
 
 const start = defineCommand({
   meta: {
@@ -25,6 +27,60 @@ const start = defineCommand({
 
     consola.info("Loading data store...")
     store.loadStore()
+
+    // 检查是否需要通过环境变量初始化管理员
+    const config = store.getSystemConfig()
+    if (!config?.initialized) {
+      const adminUsername = process.env.ADMIN_USERNAME
+      const adminPassword = process.env.ADMIN_PASSWORD
+
+      if (adminUsername && adminPassword) {
+        consola.info("Found admin credentials, initializing...")
+
+        // 参数验证
+        if (adminUsername.length < 3 || adminUsername.length > 32) {
+          consola.error("Invalid ADMIN_USERNAME (must be 3-32 characters)")
+          process.exit(1)
+        }
+
+        if (adminPassword.length < 6) {
+          consola.error("Invalid ADMIN_PASSWORD (must be at least 6 characters)")
+          process.exit(1)
+        }
+
+        // 检查用户名是否已存在
+        if (store.getUserByUsername(adminUsername)) {
+          consola.error("Username already exists")
+          process.exit(1)
+        }
+
+        // 创建管理员账号
+        const now = new Date().toISOString()
+        const adminUser = {
+          id: randomBytes(16).toString("hex"),
+          username: adminUsername,
+          password_hash: await hashPassword(adminPassword),
+          role: "admin" as const,
+          created_at: now,
+          created_by: null,
+          last_login_at: null,
+        }
+
+        store.addUser(adminUser)
+        store.setSystemConfig({
+          initialized: true,
+          admin_created_at: now,
+        })
+
+        consola.success("Admin account created!")
+        consola.info(`Username: ${adminUsername}`)
+      } else {
+        consola.warn("")
+        consola.warn("System not initialized!")
+        consola.warn("Please set ADMIN_USERNAME and ADMIN_PASSWORD in .env file")
+        consola.warn("")
+      }
+    }
 
     const accounts = store.getAccounts()
     const keys = store.getKeys()

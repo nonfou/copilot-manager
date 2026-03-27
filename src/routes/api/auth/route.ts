@@ -3,9 +3,7 @@ import { setCookie, deleteCookie } from "hono/cookie"
 import { randomBytes } from "node:crypto"
 import {
   getSystemConfig,
-  setSystemConfig,
   getUserByUsername,
-  addUser,
   updateUser,
   setSession,
   getSession,
@@ -14,7 +12,6 @@ import {
 } from "../../../store/store"
 import { hashPassword, verifyPassword } from "../../../lib/password"
 import { getCurrentUser, getCurrentUserId } from "../../../middleware/auth"
-import type { User } from "../../../store/types"
 
 export const authRoutes = new Hono()
 
@@ -55,85 +52,10 @@ authRoutes.get("/status", (c) => {
 
 /**
  * POST /api/auth/setup
- * 初始化系统，创建 admin 账号
+ * 已禁用 - 管理员账号必须通过命令行初始化
  */
 authRoutes.post("/setup", async (c) => {
-  const config = getSystemConfig()
-
-  // 已初始化则拒绝
-  if (config?.initialized) {
-    return c.json({ error: "System already initialized" }, 400)
-  }
-
-  const body = await c.req.json()
-  const { username, password } = body
-
-  // 参数验证
-  if (!username || !password) {
-    return c.json({ error: "Username and password required" }, 400)
-  }
-
-  if (username.length < 3 || username.length > 32) {
-    return c.json({ error: "Username must be 3-32 characters" }, 400)
-  }
-
-  if (password.length < 6) {
-    return c.json({ error: "Password must be at least 6 characters" }, 400)
-  }
-
-  // 检查用户名是否已存在
-  if (getUserByUsername(username)) {
-    return c.json({ error: "Username already exists" }, 400)
-  }
-
-  // 创建 admin 用户
-  const now = new Date().toISOString()
-  const adminUser: User = {
-    id: generateId(),
-    username,
-    password_hash: await hashPassword(password),
-    role: "admin",
-    created_at: now,
-    created_by: null,
-    last_login_at: null,
-  }
-
-  addUser(adminUser)
-
-  // 标记系统已初始化
-  setSystemConfig({
-    initialized: true,
-    admin_created_at: now,
-  })
-
-  // 创建 session 并设置 cookie
-  const sessionId = generateId()
-  const expiresAt = new Date(Date.now() + SESSION_EXPIRY_MS).toISOString()
-  setSession({
-    session_id: sessionId,
-    user_id: adminUser.id,
-    created_at: now,
-    expires_at: expiresAt,
-  })
-
-  setCookie(c, "cm_session", sessionId, {
-    httpOnly: true,
-    sameSite: "Strict",
-    maxAge: SESSION_EXPIRY_MS / 1000,
-    path: "/",
-  })
-
-  // 更新最后登录时间
-  updateUser(adminUser.id, { last_login_at: now })
-
-  return c.json({
-    success: true,
-    user: {
-      id: adminUser.id,
-      username: adminUser.username,
-      role: adminUser.role,
-    },
-  })
+  return c.json({ error: "Setup via API is disabled. Please use CLI: copilot-manager init -u <username> -p <password>" }, 403)
 })
 
 /**

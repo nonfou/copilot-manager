@@ -7,6 +7,9 @@ dist/
 # Data (user data, should not be committed)
 data/
 
+# Environment variables (contains secrets)
+.env
+
 # Bun
 .bun-cache/
 bun.lockb
