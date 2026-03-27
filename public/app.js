@@ -204,10 +204,27 @@ function statusCodeBadge(code) {
 }
 
 function copyToClipboard(text) {
-  navigator.clipboard.writeText(text).then(
-    () => toast('已复制到剪贴板', 'success'),
-    () => toast('复制失败', 'error'),
-  )
+  // navigator.clipboard 仅在 HTTPS 或 localhost 可用，HTTP 下用 execCommand 兜底
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(
+      () => toast('已复制到剪贴板', 'success'),
+      () => toast('复制失败', 'error'),
+    )
+  } else {
+    const el = document.createElement('textarea')
+    el.value = text
+    el.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;'
+    document.body.appendChild(el)
+    el.focus()
+    el.select()
+    try {
+      document.execCommand('copy')
+      toast('已复制到剪贴板', 'success')
+    } catch {
+      toast('复制失败，请手动复制', 'error')
+    }
+    document.body.removeChild(el)
+  }
 }
 
 // ─── Modal 辅助 ────────────────────────────────────────────────────────────

@@ -59,10 +59,7 @@
     </div>
     <div class="form-group">
       <label class="form-label">Key 名称</label>
-      <div class="flex gap-2">
-        <input class="form-input" id="new-key-name" placeholder="例：Claude Code Key" style="flex:1;">
-        <button class="btn btn-secondary btn-sm" style="white-space:nowrap;" onclick="fillRandomKeyName()">随机生成</button>
-      </div>
+      <input class="form-input" id="new-key-name" placeholder="例：Claude Code Key">
     </div>
     <div class="form-group">
       <label class="form-label">关联账号</label>
@@ -177,15 +174,6 @@ function renderKeys(keys) {
       </td>
     </tr>
   `).join('')
-}
-
-function fillRandomKeyName() {
-  const adjectives = ['工作', '家用', '开发', '测试', '个人', '项目', '办公', '临时']
-  const nouns = ['Key', 'Access Key', 'API Key', 'Token']
-  const adj = adjectives[Math.floor(Math.random() * adjectives.length)]
-  const noun = nouns[Math.floor(Math.random() * nouns.length)]
-  const suffix = Math.floor(Math.random() * 90 + 10) // 10-99
-  document.getElementById('new-key-name').value = `${adj} ${noun} ${suffix}`
 }
 
 function openCreateModal() {
