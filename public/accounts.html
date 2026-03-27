@@ -207,6 +207,25 @@
   </div>
 </div>
 
+<!-- 可用模型 Modal -->
+<div id="modal-models" class="modal-overlay hidden">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <h3 id="models-modal-title" style="margin:0;font-size:16px;font-weight:600;">可用模型</h3>
+      <button class="modal-close" onclick="closeModal('modal-models')">×</button>
+    </div>
+    <div class="modal-body" style="max-height:420px;overflow-y:auto;">
+      <div id="models-list-container">
+        <p class="text-muted">加载中...</p>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-models')">关闭</button>
+      <button class="btn btn-outline" onclick="showModels(currentModelsAccountId, currentModelsAccountName, true)">刷新</button>
+    </div>
+  </div>
+</div>
+
 <script src="app.js"></script>
 <script>
 let accounts = []
@@ -217,7 +236,11 @@ let editingId = null
 
 // 前端用量缓存：accountId -> { data, fetchedAt }
 const accountUsageCache = new Map()
+const accountModelsCache = new Map()
 const USAGE_CACHE_TTL = 5 * 60 * 1000
+
+let currentModelsAccountId = null
+let currentModelsAccountName = null
 
 // ─── 加载账号 ────────────────────────────────────────────────────────────
 
@@ -247,6 +270,7 @@ function renderAccounts() {
       <td>
         <div class="flex gap-2">
           <button class="btn btn-secondary btn-sm" title="刷新用量" onclick="refreshUsage('${acc.id}', this)">↻</button>
+          <button class="btn btn-sm" onclick="showModels('${acc.id}', '${escHtml(acc.name)}')">模型</button>
           <button class="btn btn-secondary btn-sm" onclick="editAccount('${acc.id}')">编辑</button>
           <button class="btn btn-danger btn-sm" onclick="deleteAccount('${acc.id}', '${escHtml(acc.name)}', this)">删除</button>
         </div>
@@ -325,6 +349,46 @@ async function refreshUsage(id, btn) {
   btn.textContent = orig
 }
 
+// ─── 可用模型 ─────────────────────────────────────────────────────────────
+
+async function showModels(accountId, accountName, refresh = false) {
+  currentModelsAccountId = accountId
+  currentModelsAccountName = accountName
+  document.getElementById('models-modal-title').textContent = `可用模型 - ${accountName}`
+  document.getElementById('models-list-container').innerHTML = '<p class="text-muted">加载中...</p>'
+  openModal('modal-models')
+
+  try {
+    let data
+    const cached = accountModelsCache.get(accountId)
+    if (!refresh && cached && Date.now() - cached.fetchedAt < USAGE_CACHE_TTL) {
+      data = cached.data
+    } else {
+      const url = `/accounts/${accountId}/models` + (refresh ? '?refresh=true' : '')
+      data = await api.get(url)
+      accountModelsCache.set(accountId, { data, fetchedAt: Date.now() })
+    }
+
+    const models = Array.isArray(data.data) ? data.data : []
+    if (models.length === 0) {
+      document.getElementById('models-list-container').innerHTML = '<p class="text-muted">暂无可用模型</p>'
+      return
+    }
+
+    const rows = models.map(m =>
+      `<div style="padding:6px 0;border-bottom:1px solid var(--border)">
+        <code>${escHtml(m.id)}</code>
+        ${m.display_name ? `<span class="text-muted" style="margin-left:8px">${escHtml(m.display_name)}</span>` : ''}
+      </div>`
+    ).join('')
+    document.getElementById('models-list-container').innerHTML =
+      `<p class="text-muted" style="margin-bottom:8px">共 ${models.length} 个模型</p>` + rows
+  } catch (e) {
+    document.getElementById('models-list-container').innerHTML =
+      `<p style="color:var(--danger)">获取失败：${escHtml(e.message)}</p>`
+  }
+}
+
 // ─── 删除 ────────────────────────────────────────────────────────────────
 
 async function deleteAccount(id, name, btn) {
@@ -334,6 +398,7 @@ async function deleteAccount(id, name, btn) {
   try {
     await api.delete(`/accounts/${id}`)
     accountUsageCache.delete(id)
+    accountModelsCache.delete(id)
     toast('账号已删除', 'success')
     await loadAccounts()
   } catch (err) {

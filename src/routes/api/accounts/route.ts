@@ -17,6 +17,7 @@ interface UsageCache {
 }
 
 const usageCache = new Map<string, UsageCache>()
+const modelsCache = new Map<string, UsageCache>()
 const USAGE_CACHE_TTL = 5 * 60 * 1000 // 5 分钟
 
 // ─── 列表 ───────────────────────────────────────────────────────────────────
@@ -85,8 +86,9 @@ accountRoutes.put("/:id", zValidator("json", updateAccountSchema), (c) => {
   const updated = store.updateAccount(id, updateData, admin ? undefined : userId)
   if (!updated) return c.json({ error: "Account not found or no permission" }, 404)
 
-  // 清除该账号的用量缓存
+  // 清除该账号的用量缓存和模型缓存
   usageCache.delete(id)
+  modelsCache.delete(id)
 
   return c.json({ ...updated, github_token: maskToken(updated.github_token) })
 })
@@ -110,8 +112,9 @@ accountRoutes.delete("/:id", (c) => {
   const deleted = store.deleteAccount(id, admin ? undefined : userId)
   if (!deleted) return c.json({ error: "Delete failed" }, 500)
 
-  // 清除用量缓存
+  // 清除用量缓存和模型缓存
   usageCache.delete(id)
+  modelsCache.delete(id)
 
   return c.json({ success: true })
 })
@@ -155,6 +158,54 @@ accountRoutes.get("/:id/usage", async (c) => {
     const message = err instanceof Error ? err.message : String(err)
     consola.warn(`Usage fetch failed for account ${id}: ${message}`)
     return c.json({ error: `Failed to fetch usage: ${message}` }, 502)
+  }
+})
+
+// ─── 查询可用模型 ─────────────────────────────────────────────────────────
+
+accountRoutes.get("/:id/models", async (c) => {
+  const id = c.req.param("id")
+  const forceRefresh = c.req.query("refresh") === "true"
+  const userId = getCurrentUserId(c)
+  const admin = isAdmin(c)
+
+  const account = store.getAccountById(id, admin ? undefined : userId)
+  if (!account) {
+    return c.json({ error: "Account not found or no permission" }, 404)
+  }
+
+  if (!account.api_url) {
+    return c.json({ error: "Account has no api_url configured" }, 503)
+  }
+
+  // 检查缓存
+  if (!forceRefresh) {
+    const cached = modelsCache.get(id)
+    if (cached && Date.now() - cached.fetchedAt < USAGE_CACHE_TTL) {
+      return c.json(cached.data)
+    }
+  }
+
+  try {
+    const resp = await fetch(`${account.api_url}/v1/models`, {
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (!resp.ok) {
+      // 有陈旧缓存时返回缓存，避免报错
+      const stale = modelsCache.get(id)
+      if (stale) return c.json(stale.data)
+      return c.json({ error: `Upstream returned ${resp.status}` }, 502)
+    }
+    const data = await resp.json()
+    modelsCache.set(id, { data, fetchedAt: Date.now() })
+    return c.json(data)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    consola.warn(`Models fetch failed for account ${id}: ${message}`)
+    // 有陈旧缓存时返回缓存
+    const stale = modelsCache.get(id)
+    if (stale) return c.json(stale.data)
+    return c.json({ error: `Failed to fetch models: ${message}` }, 502)
   }
 })
 
