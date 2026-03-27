@@ -64,6 +64,7 @@
     <div id="add-tabs" class="tabs">
       <div class="tab active" onclick="switchTab('oauth')">GitHub OAuth 授权</div>
       <div class="tab" onclick="switchTab('token')">直接粘贴 Token</div>
+      <div class="tab" onclick="switchTab('apionly')">仅 API 地址</div>
     </div>
 
     <!-- OAuth 流程 -->
@@ -138,6 +139,31 @@
       <div class="modal-footer">
         <button class="btn btn-secondary" onclick="closeModal('modal-account')">取消</button>
         <button class="btn btn-primary" onclick="createWithToken()">创建账号</button>
+      </div>
+    </div>
+
+    <!-- 仅 API 地址 -->
+    <div id="tab-apionly" style="display:none;">
+      <div class="form-group">
+        <label class="form-label">账号名称</label>
+        <input class="form-input" id="apionly-name" placeholder="例：我的 Copilot 账号">
+      </div>
+      <div class="form-group">
+        <label class="form-label">copilot-api 地址</label>
+        <input class="form-input" id="apionly-api-url" placeholder="例：http://localhost:8080">
+        <small class="text-muted" style="margin-top:4px;display:block;">copilot-api 实例已在外部配置好 Token，此处无需填写</small>
+      </div>
+      <div class="form-group">
+        <label class="form-label">账号类型</label>
+        <select class="form-select" id="apionly-type">
+          <option value="individual">个人版 (Individual)</option>
+          <option value="business">商业版 (Business)</option>
+          <option value="enterprise">企业版 (Enterprise)</option>
+        </select>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-account')">取消</button>
+        <button class="btn btn-primary" onclick="createWithApiOnly()">创建账号</button>
       </div>
     </div>
   </div>
@@ -361,6 +387,8 @@ function openAddModal() {
   document.getElementById('token-name').value = ''
   document.getElementById('token-api-url').value = ''
   document.getElementById('token-value').value = ''
+  document.getElementById('apionly-name').value = ''
+  document.getElementById('apionly-api-url').value = ''
   switchTab('oauth')
   document.getElementById('oauth-form').style.display = ''
   document.getElementById('oauth-waiting').style.display = 'none'
@@ -371,8 +399,13 @@ function switchTab(tab) {
   currentTab = tab
   document.getElementById('tab-oauth').style.display = tab === 'oauth' ? '' : 'none'
   document.getElementById('tab-token').style.display = tab === 'token' ? '' : 'none'
+  document.getElementById('tab-apionly').style.display = tab === 'apionly' ? '' : 'none'
   document.querySelectorAll('.tab').forEach((el, i) => {
-    el.classList.toggle('active', (i === 0 && tab === 'oauth') || (i === 1 && tab === 'token'))
+    el.classList.toggle('active',
+      (i === 0 && tab === 'oauth') ||
+      (i === 1 && tab === 'token') ||
+      (i === 2 && tab === 'apionly')
+    )
   })
 }
 
@@ -447,6 +480,22 @@ async function createWithToken() {
   if (!api_url) { toast('请填写 copilot-api 地址', 'warning'); return }
   try {
     await api.post('/accounts', { name, github_token, account_type, api_url })
+    toast('账号已创建', 'success')
+    closeModal('modal-account')
+    await loadAccounts()
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
+async function createWithApiOnly() {
+  const name = document.getElementById('apionly-name').value.trim()
+  const api_url = document.getElementById('apionly-api-url').value.trim()
+  const account_type = document.getElementById('apionly-type').value
+  if (!name) { toast('请填写账号名称', 'warning'); return }
+  if (!api_url) { toast('请填写 copilot-api 地址', 'warning'); return }
+  try {
+    await api.post('/accounts', { name, account_type, api_url })
     toast('账号已创建', 'success')
     closeModal('modal-account')
     await loadAccounts()

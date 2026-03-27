@@ -33,11 +33,11 @@ accountRoutes.get("/", (c) => {
   return c.json(result)
 })
 
-// ─── 创建账号（直接提供 token）──────────────────────────────────────────────
+// ─── 创建账号（直接提供 token，或仅 API 地址）─────────────────────────────
 
 const createAccountSchema = z.object({
   name: z.string().min(1),
-  github_token: z.string().min(1),
+  github_token: z.string().optional().default(""),  // 可选，仅 API 模式时留空
   account_type: z.enum(["individual", "business", "enterprise"]).default("individual"),
   api_url: z.string().url("api_url 必须是有效的 URL"),
 })
@@ -305,6 +305,7 @@ accountRoutes.get("/auth/poll/:auth_id", async (c) => {
 // ─── 工具函数 ────────────────────────────────────────────────────────────────
 
 function maskToken(token: string): string {
+  if (!token) return ""
   if (token.length <= 8) return "****"
   return `${token.slice(0, 4)}****${token.slice(-4)}`
 }
