@@ -167,9 +167,9 @@ function renderKeys(keys) {
       <td class="text-muted">${formatDate(k.last_used_at)}</td>
       <td>
         <div class="flex gap-2">
-          <button class="btn btn-secondary btn-sm" onclick="editKey('${k.id}', ${JSON.stringify(k.name)}, ${k.enabled})">编辑</button>
-          <button class="btn btn-secondary btn-sm" onclick="regenerateKey('${k.id}', ${JSON.stringify(k.name)}, this)">重新生成</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteKey('${k.id}', ${JSON.stringify(k.name)}, this)">删除</button>
+          <button class="btn btn-secondary btn-sm" onclick="editKey('${k.id}', ${escHtml(JSON.stringify(k.name))}, ${k.enabled})">编辑</button>
+          <button class="btn btn-secondary btn-sm" onclick="regenerateKey('${k.id}', ${escHtml(JSON.stringify(k.name))}, this)">重新生成</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteKey('${k.id}', ${escHtml(JSON.stringify(k.name))}, this)">删除</button>
         </div>
       </td>
     </tr>
