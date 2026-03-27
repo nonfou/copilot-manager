@@ -1,7 +1,6 @@
 // 核心类型定义
 
 export type AccountType = "individual" | "business" | "enterprise"
-export type AccountStatus = "stopped" | "running" | "starting" | "error"
 export type UserRole = "admin" | "user"
 
 // 用户类型
@@ -34,17 +33,9 @@ export interface Account {
   name: string
   github_token: string
   account_type: AccountType
+  api_url: string           // copilot-api 实例地址（如 http://localhost:8080）
   owner_id: string  // 所属用户 ID
   created_at: string
-}
-
-export interface AccountRuntime {
-  port: number
-  status: AccountStatus
-  pid?: number
-  error?: string
-  started_at?: string
-  restartCount: number
 }
 
 export interface ApiKey {
@@ -78,6 +69,7 @@ export interface AuthSession {
   device_code: string
   name: string
   account_type: AccountType
+  api_url: string           // copilot-api 实例地址
   owner_id: string  // 发起认证的用户 ID
   interval: number
   started_at: string
@@ -85,7 +77,6 @@ export interface AuthSession {
 }
 
 export interface StatsData {
-  running_accounts: number
   total_accounts: number
   enabled_keys: number
   today_requests: number

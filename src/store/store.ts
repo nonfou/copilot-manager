@@ -3,8 +3,6 @@ import { join } from "node:path"
 import { encrypt, decrypt } from "../lib/encrypt"
 import type {
   Account,
-  AccountRuntime,
-  AccountStatus,
   ApiKey,
   AuthSession,
   RequestLog,
@@ -20,7 +18,6 @@ const state = {
   accounts: [] as Account[],
   keys: [] as ApiKey[],
   logs: [] as RequestLog[],
-  runtime: new Map<string, AccountRuntime>(),
   authSessions: new Map<string, AuthSession>(),
   users: [] as User[],
   sessions: new Map<string, UserSession>(),
@@ -243,45 +240,16 @@ export function deleteKey(id: string, ownerId?: string): boolean {
   return false
 }
 
-// ─── 热路径：通过 API Key 查找账号和运行时 ────────────────────────────────
+// ─── 热路径：通过 API Key 查找账号 ──────────────────────────────────────────
 
 export function findKeyWithAccount(apiKey: string): {
   key: ApiKey
   account: Account | undefined
-  runtime: AccountRuntime | undefined
 } | null {
   const key = state.keys.find((k) => k.key === apiKey && k.enabled)
   if (!key) return null
   const account = state.accounts.find((a) => a.id === key.account_id)
-  const runtime = state.runtime.get(key.account_id)
-  return { key, account, runtime }
-}
-
-// ─── Runtime 状态（纯内存）─────────────────────────────────────────────────
-
-export function getRuntime(accountId: string): AccountRuntime | undefined {
-  return state.runtime.get(accountId)
-}
-
-export function setRuntime(accountId: string, runtime: AccountRuntime): void {
-  state.runtime.set(accountId, runtime)
-}
-
-export function deleteRuntime(accountId: string): void {
-  state.runtime.delete(accountId)
-}
-
-export function getAllRuntimes(): Map<string, AccountRuntime> {
-  return state.runtime
-}
-
-export function setAccountStatus(accountId: string, status: AccountStatus, extra?: Partial<AccountRuntime>): void {
-  const existing = state.runtime.get(accountId)
-  if (existing) {
-    state.runtime.set(accountId, { ...existing, status, ...extra })
-  } else {
-    state.runtime.set(accountId, { port: 0, status, restartCount: 0, ...extra })
-  }
+  return { key, account }
 }
 
 // ─── 日志 ──────────────────────────────────────────────────────────────────
@@ -326,15 +294,11 @@ export function incrementKeyRequestCount(keyId: string): void {
 
 export function getStats() {
   const today = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
-  const runningAccounts = [...state.runtime.values()].filter(
-    (r) => r.status === "running",
-  ).length
   const todayRequests = state.logs.filter((l) =>
     l.created_at.startsWith(today),
   ).length
 
   return {
-    running_accounts: runningAccounts,
     total_accounts: state.accounts.length,
     enabled_keys: state.keys.filter((k) => k.enabled).length,
     today_requests: todayRequests,

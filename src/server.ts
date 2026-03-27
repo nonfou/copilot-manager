@@ -34,14 +34,11 @@ server.use(cors({
 // ─── 健康检查（无需认证）────────────────────────────────────────────────────
 server.get("/health", (c) => {
   const accounts = store.getAccounts()
-  const runtimes = store.getAllRuntimes()
-  const running = [...runtimes.values()].filter((r) => r.status === "running").length
   return c.json({
     status: "ok",
     uptime: Math.floor(process.uptime()),
     accounts: {
       total: accounts.length,
-      running,
     },
   })
 })

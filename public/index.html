@@ -21,9 +21,9 @@
     <!-- 统计卡片 -->
     <div class="stats-grid">
       <div class="card stat-card running">
-        <div class="stat-label">运行中账号</div>
-        <div class="stat-value" id="stat-running">-</div>
-        <div class="stat-sub">/ <span id="stat-total">-</span> 总账号</div>
+        <div class="stat-label">账号总数</div>
+        <div class="stat-value" id="stat-total">-</div>
+        <div class="stat-sub">Copilot 账号</div>
       </div>
       <div class="card stat-card keys">
         <div class="stat-label">启用的 Key</div>
@@ -77,7 +77,6 @@ async function loadData() {
       api.get('/logs?limit=20'),
     ])
 
-    document.getElementById('stat-running').textContent = stats.running_accounts
     document.getElementById('stat-total').textContent = stats.total_accounts
     document.getElementById('stat-keys').textContent = stats.enabled_keys
     document.getElementById('stat-today').textContent = stats.today_requests

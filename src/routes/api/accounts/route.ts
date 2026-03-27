@@ -3,12 +3,21 @@ import { zValidator } from "@hono/zod-validator"
 import { z } from "zod"
 import consola from "consola"
 import * as store from "../../../store/store"
-import * as processManager from "../../../lib/process-manager"
 import { generateId } from "../../../lib/crypto"
 import { getCurrentUserId, isAdmin } from "../../../middleware/auth"
 import type { Account, AccountType, AuthSession } from "../../../store/types"
 
 export const accountRoutes = new Hono()
+
+// ─── 用量缓存（5 分钟）──────────────────────────────────────────────────────
+
+interface UsageCache {
+  data: unknown
+  fetchedAt: number
+}
+
+const usageCache = new Map<string, UsageCache>()
+const USAGE_CACHE_TTL = 5 * 60 * 1000 // 5 分钟
 
 // ─── 列表 ───────────────────────────────────────────────────────────────────
 
@@ -17,18 +26,10 @@ accountRoutes.get("/", (c) => {
   const admin = isAdmin(c)
   // 非 admin 只能看到自己的账号
   const accounts = store.getAccounts(admin ? undefined : userId)
-  const result = accounts.map((acc) => {
-    const runtime = store.getRuntime(acc.id)
-    return {
-      ...acc,
-      github_token: maskToken(acc.github_token),
-      status: runtime?.status ?? "stopped",
-      port: runtime?.port ?? null,
-      pid: runtime?.pid ?? null,
-      restart_count: runtime?.restartCount ?? 0,
-      error: runtime?.error ?? null,
-    }
-  })
+  const result = accounts.map((acc) => ({
+    ...acc,
+    github_token: maskToken(acc.github_token),
+  }))
   return c.json(result)
 })
 
@@ -38,6 +39,7 @@ const createAccountSchema = z.object({
   name: z.string().min(1),
   github_token: z.string().min(1),
   account_type: z.enum(["individual", "business", "enterprise"]).default("individual"),
+  api_url: z.string().url("api_url 必须是有效的 URL"),
 })
 
 accountRoutes.post("/", zValidator("json", createAccountSchema), (c) => {
@@ -51,6 +53,7 @@ accountRoutes.post("/", zValidator("json", createAccountSchema), (c) => {
     name: body.name,
     github_token: body.github_token,
     account_type: body.account_type as AccountType,
+    api_url: body.api_url.replace(/\/$/, ""), // 去掉末尾斜杠
     owner_id: userId,
     created_at: new Date().toISOString(),
   }
@@ -64,6 +67,7 @@ const updateAccountSchema = z.object({
   name: z.string().min(1).optional(),
   github_token: z.string().min(1).optional(),
   account_type: z.enum(["individual", "business", "enterprise"]).optional(),
+  api_url: z.string().url("api_url 必须是有效的 URL").optional(),
 })
 
 accountRoutes.put("/:id", zValidator("json", updateAccountSchema), (c) => {
@@ -71,9 +75,19 @@ accountRoutes.put("/:id", zValidator("json", updateAccountSchema), (c) => {
   const body = c.req.valid("json")
   const userId = getCurrentUserId(c)
   const admin = isAdmin(c)
+
+  const updateData: Partial<Account> = { ...body }
+  if (body.api_url) {
+    updateData.api_url = body.api_url.replace(/\/$/, "")
+  }
+
   // 非 admin 只能更新自己的账号
-  const updated = store.updateAccount(id, body, admin ? undefined : userId)
+  const updated = store.updateAccount(id, updateData, admin ? undefined : userId)
   if (!updated) return c.json({ error: "Account not found or no permission" }, 404)
+
+  // 清除该账号的用量缓存
+  usageCache.delete(id)
+
   return c.json({ ...updated, github_token: maskToken(updated.github_token) })
 })
 
@@ -88,11 +102,6 @@ accountRoutes.delete("/:id", (c) => {
   if (!account) {
     return c.json({ error: "Account not found or no permission" }, 404)
   }
-  // 先停止进程
-  const runtime = store.getRuntime(id)
-  if (runtime?.status === "running" || runtime?.status === "starting") {
-    processManager.stopProcess(id)
-  }
   // 删除关联 keys
   const keys = store.getKeys(admin ? undefined : userId, id)
   for (const key of keys) {
@@ -100,38 +109,53 @@ accountRoutes.delete("/:id", (c) => {
   }
   const deleted = store.deleteAccount(id, admin ? undefined : userId)
   if (!deleted) return c.json({ error: "Delete failed" }, 500)
+
+  // 清除用量缓存
+  usageCache.delete(id)
+
   return c.json({ success: true })
 })
 
-// ─── 启动进程 ────────────────────────────────────────────────────────────────
+// ─── 查询账号用量 ─────────────────────────────────────────────────────────────
 
-accountRoutes.post("/:id/start", async (c) => {
+accountRoutes.get("/:id/usage", async (c) => {
   const id = c.req.param("id")
+  const forceRefresh = c.req.query("refresh") === "true"
   const userId = getCurrentUserId(c)
   const admin = isAdmin(c)
+
   const account = store.getAccountById(id, admin ? undefined : userId)
-  if (!account) return c.json({ error: "Account not found or no permission" }, 404)
+  if (!account) {
+    return c.json({ error: "Account not found or no permission" }, 404)
+  }
+
+  if (!account.api_url) {
+    return c.json({ error: "Account has no api_url configured" }, 400)
+  }
+
+  // 检查缓存
+  if (!forceRefresh) {
+    const cached = usageCache.get(id)
+    if (cached && Date.now() - cached.fetchedAt < USAGE_CACHE_TTL) {
+      return c.json(cached.data)
+    }
+  }
 
   try {
-    await processManager.startProcess(account)
-    const runtime = store.getRuntime(id)
-    return c.json({ success: true, port: runtime?.port, status: runtime?.status })
+    const resp = await fetch(`${account.api_url}/usage`, {
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (!resp.ok) {
+      return c.json({ error: `Upstream returned ${resp.status}` }, 502)
+    }
+    const data = await resp.json()
+    usageCache.set(id, { data, fetchedAt: Date.now() })
+    return c.json(data)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    return c.json({ error: message }, 500)
+    consola.warn(`Usage fetch failed for account ${id}: ${message}`)
+    return c.json({ error: `Failed to fetch usage: ${message}` }, 502)
   }
-})
-
-// ─── 停止进程 ────────────────────────────────────────────────────────────────
-
-accountRoutes.post("/:id/stop", (c) => {
-  const id = c.req.param("id")
-  const userId = getCurrentUserId(c)
-  const admin = isAdmin(c)
-  const account = store.getAccountById(id, admin ? undefined : userId)
-  if (!account) return c.json({ error: "Account not found or no permission" }, 404)
-  processManager.stopProcess(id)
-  return c.json({ success: true })
 })
 
 // ─── Device Flow 开始 ──────────────────────────────────────────────────────
@@ -139,10 +163,11 @@ accountRoutes.post("/:id/stop", (c) => {
 const authStartSchema = z.object({
   name: z.string().min(1),
   account_type: z.enum(["individual", "business", "enterprise"]).default("individual"),
+  api_url: z.string().url("api_url 必须是有效的 URL"),
 })
 
 accountRoutes.post("/auth/start", zValidator("json", authStartSchema), async (c) => {
-  const { name, account_type } = c.req.valid("json")
+  const { name, account_type, api_url } = c.req.valid("json")
   const userId = getCurrentUserId(c)
   if (!userId) {
     return c.json({ error: "Not authenticated" }, 401)
@@ -180,6 +205,7 @@ accountRoutes.post("/auth/start", zValidator("json", authStartSchema), async (c)
       device_code: data.device_code,
       name,
       account_type: account_type as AccountType,
+      api_url: api_url.replace(/\/$/, ""),
       owner_id: userId,
       interval: data.interval ?? 5,
       started_at: new Date().toISOString(),
@@ -256,6 +282,7 @@ accountRoutes.get("/auth/poll/:auth_id", async (c) => {
         name: session.name,
         github_token: data.access_token,
         account_type: session.account_type,
+        api_url: session.api_url,
         owner_id: session.owner_id,
         created_at: new Date().toISOString(),
       }

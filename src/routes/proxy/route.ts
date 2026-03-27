@@ -56,17 +56,14 @@ proxyRoutes.all("/*", async (c) => {
     return c.json({ error: "Invalid API key" }, 401)
   }
 
-  const { key, account, runtime } = found
+  const { key, account } = found
 
   if (!account) {
     return c.json({ error: "Account not found" }, 404)
   }
 
-  if (!runtime || runtime.status !== "running") {
-    return c.json(
-      { error: `Account "${account.name}" is not running (status: ${runtime?.status ?? "stopped"})` },
-      503,
-    )
+  if (!account.api_url) {
+    return c.json({ error: `Account "${account.name}" has no api_url configured` }, 503)
   }
 
   // 限流检查
@@ -79,8 +76,6 @@ proxyRoutes.all("/*", async (c) => {
     )
   }
 
-  const { port } = runtime
-
   // 构建转发请求头
   const headers = new Headers(c.req.raw.headers)
   headers.delete("authorization")
@@ -92,7 +87,8 @@ proxyRoutes.all("/*", async (c) => {
 
   try {
     const reqUrl = new URL(c.req.raw.url)
-    const upstreamUrl = `http://localhost:${port}${reqUrl.pathname}${reqUrl.search}`
+    const baseUrl = account.api_url.replace(/\/$/, "")
+    const upstreamUrl = `${baseUrl}${reqUrl.pathname}${reqUrl.search}`
 
     upstreamResponse = await fetch(upstreamUrl, {
       method: c.req.method,

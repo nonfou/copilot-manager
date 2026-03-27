@@ -4,7 +4,6 @@ import { defineCommand, runMain } from "citty"
 import consola from "consola"
 import { serve, type ServerHandler } from "srvx"
 import * as store from "./store/store"
-import * as processManager from "./lib/process-manager"
 import { server } from "./server"
 import { hashPassword } from "./lib/password"
 import { initEncryption } from "./lib/encrypt"
@@ -90,10 +89,9 @@ const start = defineCommand({
     const keys = store.getKeys()
     consola.info(`Loaded ${accounts.length} account(s), ${keys.length} key(s)`)
 
-    // 优雅退出：等待子进程终止，flush 防抖缓冲区
+    // 优雅退出：flush 防抖缓冲区
     const shutdown = async (signal: string) => {
       consola.info(`Received ${signal}, shutting down gracefully...`)
-      await processManager.stopAll()
       store.flushPendingWrites()
       process.exit(0)
     }

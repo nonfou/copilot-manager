@@ -5,6 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>账号管理 - Copilot Manager</title>
   <link rel="stylesheet" href="style.css">
+  <style>
+    .usage-bar-wrap { min-width: 140px; }
+    .usage-bar-bg { background: var(--border); border-radius: 4px; height: 8px; overflow: hidden; margin: 4px 0; }
+    .usage-bar-fill { height: 100%; border-radius: 4px; background: var(--primary); transition: width .3s; }
+    .usage-bar-fill.warn { background: #f59e0b; }
+    .usage-bar-fill.danger { background: #ef4444; }
+    .usage-text { font-size: 11px; color: var(--text-muted); }
+    .usage-unlimited { font-size: 12px; color: var(--text-muted); }
+    .usage-loading { font-size: 12px; color: var(--text-muted); }
+  </style>
 </head>
 <body>
 <div class="layout">
@@ -13,7 +23,7 @@
   <main class="main">
     <div class="page-header">
       <h2>账号管理</h2>
-      <p>管理 GitHub Copilot 账号及其子进程</p>
+      <p>管理 GitHub Copilot 账号，每个账号对应一个外部运行的 copilot-api 实例</p>
     </div>
 
     <div class="card">
@@ -28,22 +38,21 @@
         <thead>
           <tr>
             <th>名称</th>
+            <th>API 地址</th>
             <th>类型</th>
-            <th>状态</th>
-            <th>端口</th>
-            <th>重启次数</th>
+            <th>用量 (Premium)</th>
             <th>操作</th>
           </tr>
         </thead>
         <tbody id="accounts-table">
-          <tr><td colspan="6" class="table-empty">加载中...</td></tr>
+          <tr><td colspan="5" class="table-empty">加载中...</td></tr>
         </tbody>
       </table>
     </div>
   </main>
 </div>
 
-<!-- 添加/编辑账号 Modal -->
+<!-- 添加账号 Modal -->
 <div id="modal-account" class="modal-overlay hidden">
   <div class="modal">
     <div class="modal-header">
@@ -63,6 +72,10 @@
         <div class="form-group">
           <label class="form-label">账号名称</label>
           <input class="form-input" id="oauth-name" placeholder="例：我的 Copilot 账号">
+        </div>
+        <div class="form-group">
+          <label class="form-label">copilot-api 地址</label>
+          <input class="form-input" id="oauth-api-url" placeholder="例：http://localhost:8080">
         </div>
         <div class="form-group">
           <label class="form-label">账号类型</label>
@@ -104,6 +117,10 @@
         <input class="form-input" id="token-name" placeholder="例：我的 Copilot 账号">
       </div>
       <div class="form-group">
+        <label class="form-label">copilot-api 地址</label>
+        <input class="form-input" id="token-api-url" placeholder="例：http://localhost:8080">
+      </div>
+      <div class="form-group">
         <label class="form-label">账号类型</label>
         <select class="form-select" id="token-type">
           <option value="individual">个人版 (Individual)</option>
@@ -139,6 +156,10 @@
       <input class="form-input" id="edit-name">
     </div>
     <div class="form-group">
+      <label class="form-label">copilot-api 地址</label>
+      <input class="form-input" id="edit-api-url" placeholder="例：http://localhost:8080">
+    </div>
+    <div class="form-group">
       <label class="form-label">账号类型</label>
       <select class="form-select" id="edit-type">
         <option value="individual">个人版 (Individual)</option>
@@ -168,12 +189,18 @@ let authPollTimer = null
 let currentTab = 'oauth'
 let editingId = null
 
+// 前端用量缓存：accountId -> { data, fetchedAt }
+const accountUsageCache = new Map()
+const USAGE_CACHE_TTL = 5 * 60 * 1000
+
 // ─── 加载账号 ────────────────────────────────────────────────────────────
 
 async function loadAccounts() {
   try {
     accounts = await api.get('/accounts')
     renderAccounts()
+    // 异步并行加载用量
+    loadAllUsage()
   } catch (err) {
     toast(err.message, 'error')
   }
@@ -182,21 +209,18 @@ async function loadAccounts() {
 function renderAccounts() {
   const tbody = document.getElementById('accounts-table')
   if (!accounts.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="table-empty">暂无账号，点击「添加账号」开始使用</td></tr>'
+    tbody.innerHTML = '<tr><td colspan="5" class="table-empty">暂无账号，点击「添加账号」开始使用</td></tr>'
     return
   }
   tbody.innerHTML = accounts.map(acc => `
     <tr>
       <td><strong>${escHtml(acc.name)}</strong><br><small class="text-muted monospace">${escHtml(acc.id)}</small></td>
+      <td class="monospace text-muted" style="font-size:12px;">${escHtml(acc.api_url || '-')}</td>
       <td>${escHtml(acc.account_type)}</td>
-      <td>${statusBadge(acc.status)}</td>
-      <td class="monospace text-muted">${acc.port ? acc.port : '-'}</td>
-      <td class="text-muted">${acc.restart_count}</td>
+      <td id="usage-cell-${acc.id}"><span class="usage-loading">加载中...</span></td>
       <td>
         <div class="flex gap-2">
-          ${acc.status === 'running' || acc.status === 'starting'
-            ? `<button class="btn btn-danger btn-sm" onclick="stopAccount('${acc.id}', this)">停止</button>`
-            : `<button class="btn btn-success btn-sm" onclick="startAccount('${acc.id}', this)">启动</button>`}
+          <button class="btn btn-secondary btn-sm" title="刷新用量" onclick="refreshUsage('${acc.id}', this)">↻</button>
           <button class="btn btn-secondary btn-sm" onclick="editAccount('${acc.id}')">编辑</button>
           <button class="btn btn-danger btn-sm" onclick="deleteAccount('${acc.id}', '${escHtml(acc.name)}', this)">删除</button>
         </div>
@@ -205,36 +229,74 @@ function renderAccounts() {
   `).join('')
 }
 
-// ─── 启动 / 停止 ─────────────────────────────────────────────────────────
+// ─── 用量加载 ─────────────────────────────────────────────────────────────
 
-async function startAccount(id, btn) {
-  const origText = btn.textContent
-  btn.disabled = true
-  btn.textContent = '启动中...'
+async function loadAllUsage() {
+  await Promise.allSettled(accounts.map(acc => loadUsage(acc.id)))
+}
+
+async function loadUsage(id, forceRefresh = false) {
+  const cell = document.getElementById(`usage-cell-${id}`)
+  if (!cell) return
+
+  // 检查前端缓存
+  if (!forceRefresh) {
+    const cached = accountUsageCache.get(id)
+    if (cached && Date.now() - cached.fetchedAt < USAGE_CACHE_TTL) {
+      renderUsageCell(cell, cached.data)
+      return
+    }
+  }
+
   try {
-    toast('正在启动...', 'info')
-    await api.post(`/accounts/${id}/start`)
-    toast('账号已启动', 'success')
-    await loadAccounts()
+    const url = `/accounts/${id}/usage` + (forceRefresh ? '?refresh=true' : '')
+    const data = await api.get(url)
+    accountUsageCache.set(id, { data, fetchedAt: Date.now() })
+    renderUsageCell(cell, data)
   } catch (err) {
-    toast(err.message, 'error')
-    await loadAccounts()
+    cell.innerHTML = `<span class="usage-text" style="color:var(--danger)">获取失败</span>`
   }
 }
 
-async function stopAccount(id, btn) {
-  const origText = btn.textContent
-  btn.disabled = true
-  btn.textContent = '停止中...'
-  try {
-    await api.post(`/accounts/${id}/stop`)
-    toast('账号已停止', 'success')
-    await loadAccounts()
-  } catch (err) {
-    toast(err.message, 'error')
-    btn.disabled = false
-    btn.textContent = origText
+function renderUsageCell(cell, data) {
+  const snapshots = data?.quota_snapshots
+  const premium = snapshots?.premium_interactions
+
+  if (!premium) {
+    cell.innerHTML = '<span class="usage-unlimited">-</span>'
+    return
   }
+
+  if (premium.unlimited) {
+    cell.innerHTML = '<span class="usage-unlimited">无限制</span>'
+    return
+  }
+
+  const entitlement = premium.entitlement ?? 0
+  const remaining = premium.remaining ?? 0
+  const used = entitlement - remaining
+  const pct = entitlement > 0 ? Math.round((used / entitlement) * 100) : 0
+  const resetDate = data.quota_reset_date_utc
+    ? new Date(data.quota_reset_date_utc).toLocaleDateString('zh-CN')
+    : ''
+
+  const fillClass = pct >= 90 ? 'danger' : pct >= 70 ? 'warn' : ''
+
+  cell.innerHTML = `
+    <div class="usage-bar-wrap">
+      <div class="usage-bar-bg"><div class="usage-bar-fill ${fillClass}" style="width:${pct}%"></div></div>
+      <div class="usage-text">${used}/${entitlement} 已用 (${pct}%)${resetDate ? `，重置：${resetDate}` : ''}</div>
+    </div>
+  `
+}
+
+async function refreshUsage(id, btn) {
+  const orig = btn.textContent
+  btn.disabled = true
+  btn.textContent = '...'
+  await loadUsage(id, true)
+  btn.disabled = false
+  btn.textContent = orig
 }
 
 // ─── 删除 ────────────────────────────────────────────────────────────────
@@ -245,6 +307,7 @@ async function deleteAccount(id, name, btn) {
   btn.textContent = '删除中...'
   try {
     await api.delete(`/accounts/${id}`)
+    accountUsageCache.delete(id)
     toast('账号已删除', 'success')
     await loadAccounts()
   } catch (err) {
@@ -262,6 +325,7 @@ function editAccount(id) {
   editingId = id
   document.getElementById('edit-id').value = id
   document.getElementById('edit-name').value = acc.name
+  document.getElementById('edit-api-url').value = acc.api_url || ''
   document.getElementById('edit-type').value = acc.account_type
   document.getElementById('edit-token').value = ''
   openModal('modal-edit')
@@ -270,13 +334,16 @@ function editAccount(id) {
 async function saveEdit() {
   const id = editingId
   const name = document.getElementById('edit-name').value.trim()
+  const api_url = document.getElementById('edit-api-url').value.trim()
   const account_type = document.getElementById('edit-type').value
   const token = document.getElementById('edit-token').value.trim()
   if (!name) { toast('请填写账号名称', 'warning'); return }
-  const body = { name, account_type }
+  if (!api_url) { toast('请填写 copilot-api 地址', 'warning'); return }
+  const body = { name, account_type, api_url }
   if (token) body.github_token = token
   try {
     await api.put(`/accounts/${id}`, body)
+    accountUsageCache.delete(id)
     toast('保存成功', 'success')
     closeModal('modal-edit')
     await loadAccounts()
@@ -290,7 +357,9 @@ async function saveEdit() {
 function openAddModal() {
   cancelOAuth()
   document.getElementById('oauth-name').value = ''
+  document.getElementById('oauth-api-url').value = ''
   document.getElementById('token-name').value = ''
+  document.getElementById('token-api-url').value = ''
   document.getElementById('token-value').value = ''
   switchTab('oauth')
   document.getElementById('oauth-form').style.display = ''
@@ -311,10 +380,12 @@ function switchTab(tab) {
 
 async function startOAuth() {
   const name = document.getElementById('oauth-name').value.trim()
+  const api_url = document.getElementById('oauth-api-url').value.trim()
   const account_type = document.getElementById('oauth-type').value
   if (!name) { toast('请填写账号名称', 'warning'); return }
+  if (!api_url) { toast('请填写 copilot-api 地址', 'warning'); return }
   try {
-    const res = await api.post('/accounts/auth/start', { name, account_type })
+    const res = await api.post('/accounts/auth/start', { name, account_type, api_url })
     currentAuthId = res.auth_id
     document.getElementById('auth-code').textContent = res.user_code
     document.getElementById('auth-url').href = res.verification_uri
@@ -369,11 +440,13 @@ function openAuthUrl() {
 
 async function createWithToken() {
   const name = document.getElementById('token-name').value.trim()
+  const api_url = document.getElementById('token-api-url').value.trim()
   const account_type = document.getElementById('token-type').value
   const github_token = document.getElementById('token-value').value.trim()
   if (!name || !github_token) { toast('请填写所有必填项', 'warning'); return }
+  if (!api_url) { toast('请填写 copilot-api 地址', 'warning'); return }
   try {
-    await api.post('/accounts', { name, github_token, account_type })
+    await api.post('/accounts', { name, github_token, account_type, api_url })
     toast('账号已创建', 'success')
     closeModal('modal-account')
     await loadAccounts()
@@ -401,7 +474,6 @@ async function init() {
   await checkAuth()
   await loadSidebar('/ui/accounts.html')
   await loadAccounts()
-  setInterval(loadAccounts, 15_000)
 }
 
 init()
