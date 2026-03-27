@@ -15,13 +15,17 @@ Bun 是一个高性能的 JavaScript 运行时，本项目的必需依赖。
 
 ```bash
 # 使用 curl 安装
-curl -fsSL https://bun.sh/install | bash
+curl -fsSL https://bun.com/install | bash
 
 # 使环境变量生效
 source ~/.bashrc
 # 或 zsh
 source ~/.zshrc
 ```
+
+> **Linux 用户注意**：
+> - 需要先安装 `unzip`：`sudo apt install unzip`（Ubuntu/Debian）或 `sudo yum install unzip`（CentOS/RHEL）
+> - 内核版本要求 5.6+（推荐），最低 5.1。使用 `uname -r` 检查内核版本
 
 ### Windows
 
@@ -30,6 +34,8 @@ source ~/.zshrc
 ```powershell
 powershell -c "irm bun.sh/install.ps1 | iex"
 ```
+
+> 需要 Windows 10 版本 1809 或更高
 
 **方式二：使用 npm**
 
@@ -76,7 +82,7 @@ pacman -S bun
 
 ```bash
 # 拉取官方镜像
-docker pull oven/bun:1
+docker pull oven/bun
 
 # 运行
 docker run --rm oven/bun:1 bun --version
