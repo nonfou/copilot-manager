@@ -5,6 +5,40 @@ import type { RequestLog } from "../../store/types"
 
 export const proxyRoutes = new Hono()
 
+// ─── 每 API Key 限流（固定窗口计数器）──────────────────────────────────────
+
+const RATE_LIMIT = parseInt(process.env.RATE_LIMIT_PER_MINUTE ?? "300")
+const RATE_WINDOW_MS = 60_000
+
+interface RateRecord {
+  count: number
+  windowStart: number
+}
+
+const keyRateLimits = new Map<string, RateRecord>()
+
+function checkKeyRateLimit(keyId: string): { allowed: boolean; retryAfter?: number } {
+  if (RATE_LIMIT <= 0) return { allowed: true } // 0 = 不限流
+
+  const now = Date.now()
+  const record = keyRateLimits.get(keyId)
+
+  if (!record || now - record.windowStart >= RATE_WINDOW_MS) {
+    keyRateLimits.set(keyId, { count: 1, windowStart: now })
+    return { allowed: true }
+  }
+
+  record.count++
+  if (record.count > RATE_LIMIT) {
+    const retryAfter = Math.ceil((record.windowStart + RATE_WINDOW_MS - now) / 1000)
+    return { allowed: false, retryAfter }
+  }
+
+  return { allowed: true }
+}
+
+// ─── 代理处理器 ───────────────────────────────────────────────────────────
+
 proxyRoutes.all("/*", async (c) => {
   const startTime = Date.now()
   const authHeader = c.req.header("Authorization")
@@ -32,6 +66,16 @@ proxyRoutes.all("/*", async (c) => {
     return c.json(
       { error: `Account "${account.name}" is not running (status: ${runtime?.status ?? "stopped"})` },
       503,
+    )
+  }
+
+  // 限流检查
+  const rateCheck = checkKeyRateLimit(key.id)
+  if (!rateCheck.allowed) {
+    return c.json(
+      { error: "Rate limit exceeded" },
+      429,
+      { "Retry-After": String(rateCheck.retryAfter) },
     )
   }
 

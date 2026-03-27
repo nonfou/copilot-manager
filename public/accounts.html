@@ -8,16 +8,7 @@
 </head>
 <body>
 <div class="layout">
-  <nav class="sidebar">
-    <div class="sidebar-logo">
-      <h1>🤖 Copilot Manager</h1>
-      <p>多账号代理管理</p>
-    </div>
-    <a href="/ui/" class="nav-item"><span class="icon">📊</span>仪表盘</a>
-    <a href="/ui/accounts.html" class="nav-item active"><span class="icon">👤</span>账号管理</a>
-    <a href="/ui/keys.html" class="nav-item"><span class="icon">🔑</span>Key 管理</a>
-    <a href="/ui/logs.html" class="nav-item"><span class="icon">📋</span>请求日志</a>
-  </nav>
+  <nav class="sidebar" id="sidebar"></nav>
 
   <main class="main">
     <div class="page-header">
@@ -204,10 +195,10 @@ function renderAccounts() {
       <td>
         <div class="flex gap-2">
           ${acc.status === 'running' || acc.status === 'starting'
-            ? `<button class="btn btn-danger btn-sm" onclick="stopAccount('${acc.id}')">停止</button>`
-            : `<button class="btn btn-success btn-sm" onclick="startAccount('${acc.id}')">启动</button>`}
+            ? `<button class="btn btn-danger btn-sm" onclick="stopAccount('${acc.id}', this)">停止</button>`
+            : `<button class="btn btn-success btn-sm" onclick="startAccount('${acc.id}', this)">启动</button>`}
           <button class="btn btn-secondary btn-sm" onclick="editAccount('${acc.id}')">编辑</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteAccount('${acc.id}', '${escHtml(acc.name)}')">删除</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteAccount('${acc.id}', '${escHtml(acc.name)}', this)">删除</button>
         </div>
       </td>
     </tr>
@@ -216,7 +207,10 @@ function renderAccounts() {
 
 // ─── 启动 / 停止 ─────────────────────────────────────────────────────────
 
-async function startAccount(id) {
+async function startAccount(id, btn) {
+  const origText = btn.textContent
+  btn.disabled = true
+  btn.textContent = '启动中...'
   try {
     toast('正在启动...', 'info')
     await api.post(`/accounts/${id}/start`)
@@ -228,26 +222,35 @@ async function startAccount(id) {
   }
 }
 
-async function stopAccount(id) {
+async function stopAccount(id, btn) {
+  const origText = btn.textContent
+  btn.disabled = true
+  btn.textContent = '停止中...'
   try {
     await api.post(`/accounts/${id}/stop`)
     toast('账号已停止', 'success')
     await loadAccounts()
   } catch (err) {
     toast(err.message, 'error')
+    btn.disabled = false
+    btn.textContent = origText
   }
 }
 
 // ─── 删除 ────────────────────────────────────────────────────────────────
 
-async function deleteAccount(id, name) {
+async function deleteAccount(id, name, btn) {
   if (!confirm(`确认删除账号「${name}」？\n关联的所有 API Key 也将被删除。`)) return
+  btn.disabled = true
+  btn.textContent = '删除中...'
   try {
     await api.delete(`/accounts/${id}`)
     toast('账号已删除', 'success')
     await loadAccounts()
   } catch (err) {
     toast(err.message, 'error')
+    btn.disabled = false
+    btn.textContent = '删除'
   }
 }
 
@@ -394,8 +397,14 @@ function toggleVis(inputId, btn) {
 
 // ─── 初始化 ────────────────────────────────────────────────────────────────
 
-loadAccounts()
-setInterval(loadAccounts, 15_000)
+async function init() {
+  await checkAuth()
+  await loadSidebar('/ui/accounts.html')
+  await loadAccounts()
+  setInterval(loadAccounts, 15_000)
+}
+
+init()
 </script>
 </body>
 </html>

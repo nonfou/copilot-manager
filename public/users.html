@@ -91,32 +91,13 @@
 
 <script src="app.js"></script>
 <script>
-let currentUser = null
-
-// 加载侧边栏
-async function loadSidebar() {
-  try {
-    const res = await fetch('/ui/sidebar.html')
-    const html = await res.text()
-    document.getElementById('sidebar').innerHTML = html
-    // 高亮当前页
-    document.querySelectorAll('.nav-item').forEach(el => {
-      if (el.getAttribute('href') === '/ui/users.html') {
-        el.classList.add('active')
-      } else {
-        el.classList.remove('active')
-      }
-    })
-  } catch (err) {
-    console.error('Failed to load sidebar:', err)
-  }
-}
+let usersPageCurrentUser = null
 
 // 加载用户列表
 async function loadUsers() {
   try {
     const data = await api.get('/users')
-    currentUser = data.current_user
+    usersPageCurrentUser = data.current_user
     const tbody = document.getElementById('users-table')
 
     if (!data.users.length) {
@@ -132,7 +113,7 @@ async function loadUsers() {
         <td class="text-muted">${user.last_login_at ? formatDate(user.last_login_at) : '-'}</td>
         <td>
           <button class="btn btn-secondary btn-sm" onclick="openResetPassword('${user.id}')">重置密码</button>
-          ${user.id !== currentUser?.id ? `<button class="btn btn-danger btn-sm" onclick="deleteUser('${user.id}', '${escHtml(user.username)}')">删除</button>` : ''}
+        ${user.id !== usersPageCurrentUser?.id ? `<button class="btn btn-danger btn-sm" onclick="deleteUser('${user.id}', '${escHtml(user.username)}')">删除</button>` : ''}
         </td>
       </tr>
     `).join('')
@@ -195,8 +176,12 @@ async function deleteUser(userId, username) {
 }
 
 // 初始化
-loadSidebar()
-loadUsers()
+async function init() {
+  await checkAuth()
+  await loadSidebar('/ui/users.html')
+  await loadUsers()
+}
+init()
 </script>
 </body>
 </html>

@@ -102,6 +102,31 @@ async function logout() {
   }
 }
 
+// ─── 侧边栏（统一 fetch 注入）────────────────────────────────────────────────
+
+/**
+ * 加载侧边栏并高亮当前页链接
+ * @param {string} activeHref  当前页的 href，例如 '/ui/accounts.html'
+ */
+async function loadSidebar(activeHref) {
+  try {
+    const res = await fetch('/ui/sidebar.html')
+    const html = await res.text()
+    const el = document.getElementById('sidebar')
+    if (!el) return
+    el.innerHTML = html
+    // 高亮当前页链接
+    document.querySelectorAll('.nav-item').forEach((link) => {
+      const href = link.getAttribute('href')
+      link.classList.toggle('active', href === activeHref || (activeHref === '/ui/' && (href === '/ui/' || href === '/ui')))
+    })
+    // 侧边栏 DOM 已就绪，立即填充用户信息
+    if (currentUser) updateUIForUser(currentUser)
+  } catch (err) {
+    console.error('Failed to load sidebar:', err)
+  }
+}
+
 // ─── Toast 通知 ────────────────────────────────────────────────────────────
 
 function getToastContainer() {
@@ -200,4 +225,5 @@ window.openModal = openModal
 window.closeModal = closeModal
 window.checkAuth = checkAuth
 window.logout = logout
+window.loadSidebar = loadSidebar
 window.getCurrentUser = () => currentUser

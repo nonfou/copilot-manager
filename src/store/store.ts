@@ -1,5 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs"
 import { join } from "node:path"
+import { encrypt, decrypt } from "../lib/encrypt"
 import type {
   Account,
   AccountRuntime,
@@ -39,19 +40,84 @@ function readJsonFile<T>(filename: string, defaultValue: T): T {
   }
 }
 
-function writeJsonFile(filename: string, data: unknown): void {
+/**
+ * 原子文件写入：先写临时文件，再 rename 替换，避免写到一半时崩溃导致文件损坏
+ */
+function writeJsonFileAtomic(filename: string, data: unknown): void {
   if (!existsSync(DATA_DIR)) {
     mkdirSync(DATA_DIR, { recursive: true })
   }
   const filePath = join(DATA_DIR, filename)
-  writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8")
+  const tmpPath = filePath + ".tmp"
+  writeFileSync(tmpPath, JSON.stringify(data, null, 2), "utf-8")
+  renameSync(tmpPath, filePath) // 原子替换（POSIX + Windows 均支持）
+}
+
+// ─── 防抖写入（热路径专用）──────────────────────────────────────────────────
+
+let saveKeysTimer: ReturnType<typeof setTimeout> | null = null
+let saveLogsTimer: ReturnType<typeof setTimeout> | null = null
+
+function saveKeysNow(): void {
+  const toSave = state.keys.map((k) => ({ ...k, key: encrypt(k.key) }))
+  writeJsonFileAtomic("keys.json", toSave)
+}
+
+function saveLogsNow(): void {
+  writeJsonFileAtomic("logs.json", state.logs.slice(-5000))
+}
+
+/**
+ * 防抖写入 keys（热路径：incrementKeyRequestCount）
+ * 5 秒内最多写一次，合并高频写入
+ */
+function saveKeysDebounced(): void {
+  if (saveKeysTimer) return
+  saveKeysTimer = setTimeout(() => {
+    saveKeysNow()
+    saveKeysTimer = null
+  }, 5000)
+}
+
+/**
+ * 防抖写入 logs（热路径：appendLog）
+ */
+function saveLogsDebounced(): void {
+  if (saveLogsTimer) return
+  saveLogsTimer = setTimeout(() => {
+    saveLogsNow()
+    saveLogsTimer = null
+  }, 5000)
+}
+
+/**
+ * 强制立即 flush 所有待写入的防抖缓冲区（进程退出前调用）
+ */
+export function flushPendingWrites(): void {
+  if (saveKeysTimer) {
+    clearTimeout(saveKeysTimer)
+    saveKeysTimer = null
+    saveKeysNow()
+  }
+  if (saveLogsTimer) {
+    clearTimeout(saveLogsTimer)
+    saveLogsTimer = null
+    saveLogsNow()
+  }
 }
 
 // ─── 初始化加载 ─────────────────────────────────────────────────────────────
 
 export function loadStore(): void {
-  state.accounts = readJsonFile<Account[]>("accounts.json", [])
-  state.keys = readJsonFile<ApiKey[]>("keys.json", [])
+  // 加载时解密敏感字段（支持明文向后兼容）
+  state.accounts = readJsonFile<Account[]>("accounts.json", []).map((a) => ({
+    ...a,
+    github_token: decrypt(a.github_token),
+  }))
+  state.keys = readJsonFile<ApiKey[]>("keys.json", []).map((k) => ({
+    ...k,
+    key: decrypt(k.key),
+  }))
   state.logs = readJsonFile<RequestLog[]>("logs.json", [])
   state.users = readJsonFile<User[]>("users.json", [])
   state.systemConfig = readJsonFile<SystemConfig | null>("config.json", null)
@@ -60,24 +126,34 @@ export function loadStore(): void {
 // ─── 持久化写入 ─────────────────────────────────────────────────────────────
 
 export function saveAccounts(): void {
-  writeJsonFile("accounts.json", state.accounts)
+  const toSave = state.accounts.map((a) => ({ ...a, github_token: encrypt(a.github_token) }))
+  writeJsonFileAtomic("accounts.json", toSave)
 }
 
 export function saveKeys(): void {
-  writeJsonFile("keys.json", state.keys)
+  // 立即写入（取消任何待写入的防抖计时器，确保数据一致性）
+  if (saveKeysTimer) {
+    clearTimeout(saveKeysTimer)
+    saveKeysTimer = null
+  }
+  saveKeysNow()
 }
 
 export function saveLogs(): void {
-  writeJsonFile("logs.json", state.logs.slice(-500))
+  if (saveLogsTimer) {
+    clearTimeout(saveLogsTimer)
+    saveLogsTimer = null
+  }
+  saveLogsNow()
 }
 
 export function saveUsers(): void {
-  writeJsonFile("users.json", state.users)
+  writeJsonFileAtomic("users.json", state.users)
 }
 
 export function saveConfig(): void {
   if (state.systemConfig) {
-    writeJsonFile("config.json", state.systemConfig)
+    writeJsonFileAtomic("config.json", state.systemConfig)
   }
 }
 
@@ -230,11 +306,11 @@ export function getLogs(options?: {
 
 export function appendLog(log: RequestLog): void {
   state.logs.push(log)
-  // 超出 500 条时裁剪（保留最新）
-  if (state.logs.length > 500) {
-    state.logs = state.logs.slice(-500)
+  // 超出 5000 条时裁剪（保留最新）
+  if (state.logs.length > 5000) {
+    state.logs = state.logs.slice(-5000)
   }
-  saveLogs()
+  saveLogsDebounced()
 }
 
 export function incrementKeyRequestCount(keyId: string): void {
@@ -242,7 +318,7 @@ export function incrementKeyRequestCount(keyId: string): void {
   if (idx !== -1) {
     state.keys[idx].request_count++
     state.keys[idx].last_used_at = new Date().toISOString()
-    saveKeys()
+    saveKeysDebounced() // 防抖：避免热路径每次请求都触发写盘
   }
 }
 

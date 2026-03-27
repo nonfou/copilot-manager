@@ -7,6 +7,7 @@ import * as store from "./store/store"
 import * as processManager from "./lib/process-manager"
 import { server } from "./server"
 import { hashPassword } from "./lib/password"
+import { initEncryption } from "./lib/encrypt"
 import { randomBytes } from "node:crypto"
 
 const start = defineCommand({
@@ -24,6 +25,9 @@ const start = defineCommand({
   },
   async run({ args }) {
     const port = parseInt(args.port, 10)
+
+    // 初始化加密（必须在 loadStore 之前，确保加载时能解密）
+    initEncryption()
 
     consola.info("Loading data store...")
     store.loadStore()
@@ -86,23 +90,23 @@ const start = defineCommand({
     const keys = store.getKeys()
     consola.info(`Loaded ${accounts.length} account(s), ${keys.length} key(s)`)
 
-    // 优雅退出
-    process.on("SIGINT", () => {
-      consola.info("Shutting down...")
-      processManager.stopAll()
+    // 优雅退出：等待子进程终止，flush 防抖缓冲区
+    const shutdown = async (signal: string) => {
+      consola.info(`Received ${signal}, shutting down gracefully...`)
+      await processManager.stopAll()
+      store.flushPendingWrites()
       process.exit(0)
-    })
-    process.on("SIGTERM", () => {
-      consola.info("Shutting down...")
-      processManager.stopAll()
-      process.exit(0)
-    })
+    }
+
+    process.on("SIGINT", () => shutdown("SIGINT"))
+    process.on("SIGTERM", () => shutdown("SIGTERM"))
 
     consola.box(
       [
         `🚀 Copilot Manager running on http://localhost:${port}`,
         `🖥️  UI: http://localhost:${port}/ui/`,
         `📡 API: http://localhost:${port}/api/`,
+        `💊 Health: http://localhost:${port}/health`,
       ].join("\n"),
     )
 

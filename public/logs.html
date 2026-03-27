@@ -8,21 +8,12 @@
 </head>
 <body>
 <div class="layout">
-  <nav class="sidebar">
-    <div class="sidebar-logo">
-      <h1>🤖 Copilot Manager</h1>
-      <p>多账号代理管理</p>
-    </div>
-    <a href="/ui/" class="nav-item"><span class="icon">📊</span>仪表盘</a>
-    <a href="/ui/accounts.html" class="nav-item"><span class="icon">👤</span>账号管理</a>
-    <a href="/ui/keys.html" class="nav-item"><span class="icon">🔑</span>Key 管理</a>
-    <a href="/ui/logs.html" class="nav-item active"><span class="icon">📋</span>请求日志</a>
-  </nav>
+  <nav class="sidebar" id="sidebar"></nav>
 
   <main class="main">
     <div class="page-header">
       <h2>请求日志</h2>
-      <p>最近 500 条代理请求记录</p>
+      <p>最近 5000 条代理请求记录</p>
     </div>
 
     <div class="card">
@@ -115,7 +106,16 @@ function renderLogs(res) {
   document.getElementById('btn-next').disabled = res.page >= (res.total_pages || 1)
 }
 
-loadAccountFilter().then(() => loadLogs(1))
+// ─── 初始化 ────────────────────────────────────────────────────────────────
+
+async function init() {
+  await checkAuth()
+  await loadSidebar('/ui/logs.html')
+  await loadAccountFilter()
+  await loadLogs(1)
+}
+
+init()
 </script>
 </body>
 </html>

@@ -8,16 +8,7 @@
 </head>
 <body>
 <div class="layout">
-  <nav class="sidebar">
-    <div class="sidebar-logo">
-      <h1>🤖 Copilot Manager</h1>
-      <p>多账号代理管理</p>
-    </div>
-    <a href="/ui/" class="nav-item"><span class="icon">📊</span>仪表盘</a>
-    <a href="/ui/accounts.html" class="nav-item"><span class="icon">👤</span>账号管理</a>
-    <a href="/ui/keys.html" class="nav-item active"><span class="icon">🔑</span>Key 管理</a>
-    <a href="/ui/logs.html" class="nav-item"><span class="icon">📋</span>请求日志</a>
-  </nav>
+  <nav class="sidebar" id="sidebar"></nav>
 
   <main class="main">
     <div class="page-header">
@@ -177,8 +168,8 @@ function renderKeys(keys) {
       <td>
         <div class="flex gap-2">
           <button class="btn btn-secondary btn-sm" onclick="editKey('${k.id}', ${JSON.stringify(k.name)}, ${k.enabled})">编辑</button>
-          <button class="btn btn-secondary btn-sm" onclick="regenerateKey('${k.id}', ${JSON.stringify(k.name)})">重新生成</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteKey('${k.id}', ${JSON.stringify(k.name)})">删除</button>
+          <button class="btn btn-secondary btn-sm" onclick="regenerateKey('${k.id}', ${JSON.stringify(k.name)}, this)">重新生成</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteKey('${k.id}', ${JSON.stringify(k.name)}, this)">删除</button>
         </div>
       </td>
     </tr>
@@ -233,8 +224,11 @@ async function saveKeyEdit() {
   }
 }
 
-async function regenerateKey(id, name) {
+async function regenerateKey(id, name, btn) {
   if (!confirm(`确认重新生成 Key「${name}」？\n旧的 Key 将立即失效。`)) return
+  const origText = btn.textContent
+  btn.disabled = true
+  btn.textContent = '生成中...'
   try {
     const key = await api.post(`/keys/${id}/regenerate`)
     revealedKey = key.key
@@ -243,22 +237,37 @@ async function regenerateKey(id, name) {
     await loadKeys()
   } catch (err) {
     toast(err.message, 'error')
+    btn.disabled = false
+    btn.textContent = origText
   }
 }
 
-async function deleteKey(id, name) {
+async function deleteKey(id, name, btn) {
   if (!confirm(`确认删除 Key「${name}」？`)) return
+  const origText = btn.textContent
+  btn.disabled = true
+  btn.textContent = '删除中...'
   try {
     await api.delete(`/keys/${id}`)
     toast('Key 已删除', 'success')
     await loadKeys()
   } catch (err) {
     toast(err.message, 'error')
+    btn.disabled = false
+    btn.textContent = origText
   }
 }
 
-// 初始化
-loadAccountOptions().then(() => loadKeys())
+// ─── 初始化 ────────────────────────────────────────────────────────────────
+
+async function init() {
+  await checkAuth()
+  await loadSidebar('/ui/keys.html')
+  await loadAccountOptions()
+  await loadKeys()
+}
+
+init()
 </script>
 </body>
 </html>

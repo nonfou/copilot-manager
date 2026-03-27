@@ -1,14 +1,27 @@
 import consola from "consola"
+import { existsSync } from "node:fs"
+import { join } from "node:path"
 import type { Subprocess } from "bun"
 import { allocatePort, releasePort, isPortListening } from "./port-manager"
 import * as store from "../store/store"
 import type { Account } from "../store/types"
 
-const COPILOT_API_ENTRY = "C:\\AiCode\\copilot-api\\src\\main.ts"
+// 子进程路径：优先使用 COPILOT_API_PATH 环境变量，否则使用相对路径默认值
+const COPILOT_API_ENTRY =
+  process.env.COPILOT_API_PATH ??
+  join(import.meta.dir, "../../../copilot-api/src/main.ts")
+
+// 启动时检查路径是否存在
+if (!existsSync(COPILOT_API_ENTRY)) {
+  consola.warn(`copilot-api 未找到: ${COPILOT_API_ENTRY}`)
+  consola.warn(`请在 .env 中设置 COPILOT_API_PATH 指向正确路径，否则无法启动账号进程。`)
+}
+
 const HEALTH_CHECK_TIMEOUT = 20_000  // 20秒
 const HEALTH_CHECK_INTERVAL = 1_000  // 每秒检查一次
 const MAX_RESTART_COUNT = 5
 const HEALTH_POLL_INTERVAL = 30_000  // 30秒定期健康检查
+const STOP_TIMEOUT_MS = 5_000        // 等待子进程退出的超时时间
 
 const processes = new Map<string, Subprocess>()
 const healthTimers = new Map<string, ReturnType<typeof setInterval>>()
@@ -17,6 +30,10 @@ const healthTimers = new Map<string, ReturnType<typeof setInterval>>()
  * 启动 copilot-api 子进程
  */
 export async function startProcess(account: Account): Promise<void> {
+  if (!existsSync(COPILOT_API_ENTRY)) {
+    throw new Error(`copilot-api not found: ${COPILOT_API_ENTRY}. Set COPILOT_API_PATH env variable.`)
+  }
+
   const existingRuntime = store.getRuntime(account.id)
   if (existingRuntime?.status === "running" || existingRuntime?.status === "starting") {
     throw new Error(`Account ${account.name} is already running or starting`)
@@ -80,15 +97,24 @@ export async function startProcess(account: Account): Promise<void> {
 }
 
 /**
- * 停止子进程
+ * 停止子进程（优雅关闭：先 SIGTERM，超时后 SIGKILL）
  */
-export function stopProcess(accountId: string): void {
+export async function stopProcess(accountId: string): Promise<void> {
   stopHealthMonitor(accountId)
 
   const proc = processes.get(accountId)
   if (proc) {
     try {
-      proc.kill()
+      proc.kill("SIGTERM")
+      // 等待进程退出（最多 5 秒）
+      const timeout = new Promise<void>((resolve) => setTimeout(resolve, STOP_TIMEOUT_MS))
+      await Promise.race([proc.exited.then(() => undefined), timeout])
+
+      // 若超时仍未退出，强制 kill
+      if (proc.exitCode === null) {
+        proc.kill("SIGKILL")
+        await proc.exited.catch(() => undefined)
+      }
     } catch {
       // 忽略 kill 错误
     }
@@ -197,7 +223,7 @@ async function attemptRestart(account: Account): Promise<void> {
       startedAt: new Date().toISOString(),
     })
 
-    const proc = Bun.spawn(
+    const newProc = Bun.spawn(
       [
         "bun", "run", COPILOT_API_ENTRY, "start",
         "--port", String(port),
@@ -207,13 +233,13 @@ async function attemptRestart(account: Account): Promise<void> {
       { stdout: "pipe", stderr: "pipe", stdin: "ignore" },
     )
 
-    processes.set(account.id, proc)
+    processes.set(account.id, newProc)
     await waitForHealthy(port, account.id)
 
     store.setRuntime(account.id, {
       port,
       status: "running",
-      pid: proc.pid,
+      pid: newProc.pid,
       restartCount,
       startedAt: new Date().toISOString(),
     })
@@ -228,10 +254,9 @@ async function attemptRestart(account: Account): Promise<void> {
 }
 
 /**
- * 停止所有子进程（程序退出时调用）
+ * 停止所有子进程（程序退出时调用，等待所有子进程实际终止）
  */
-export function stopAll(): void {
-  for (const [accountId] of processes) {
-    stopProcess(accountId)
-  }
+export async function stopAll(): Promise<void> {
+  const accountIds = [...processes.keys()]
+  await Promise.all(accountIds.map((id) => stopProcess(id)))
 }
