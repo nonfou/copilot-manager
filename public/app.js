@@ -106,25 +106,41 @@ async function logout() {
 
 /**
  * 加载侧边栏并高亮当前页链接
+ * 使用 sessionStorage 缓存 sidebar HTML，避免每次页面导航时出现闪烁
  * @param {string} activeHref  当前页的 href，例如 '/ui/accounts.html'
  */
 async function loadSidebar(activeHref) {
   try {
-    const res = await fetch('/ui/sidebar.html')
-    const html = await res.text()
     const el = document.getElementById('sidebar')
     if (!el) return
-    el.innerHTML = html
-    // 高亮当前页链接
-    document.querySelectorAll('.nav-item').forEach((link) => {
-      const href = link.getAttribute('href')
-      link.classList.toggle('active', href === activeHref || (activeHref === '/ui/' && (href === '/ui/' || href === '/ui')))
-    })
-    // 侧边栏 DOM 已就绪，立即填充用户信息
-    if (currentUser) updateUIForUser(currentUser)
+
+    // 优先使用缓存，立即渲染（消除闪烁）
+    const cached = sessionStorage.getItem('sidebar_html')
+    if (cached) {
+      el.innerHTML = cached
+      applySidebarActive(activeHref)
+      if (currentUser) updateUIForUser(currentUser)
+    }
+
+    // 后台静默更新缓存（不更改已渲染内容，除非确实有变化）
+    const res = await fetch('/ui/sidebar.html')
+    const html = await res.text()
+    if (html !== cached) {
+      sessionStorage.setItem('sidebar_html', html)
+      el.innerHTML = html
+      applySidebarActive(activeHref)
+      if (currentUser) updateUIForUser(currentUser)
+    }
   } catch (err) {
     console.error('Failed to load sidebar:', err)
   }
+}
+
+function applySidebarActive(activeHref) {
+  document.querySelectorAll('.nav-item').forEach((link) => {
+    const href = link.getAttribute('href')
+    link.classList.toggle('active', href === activeHref || (activeHref === '/ui/' && (href === '/ui/' || href === '/ui')))
+  })
 }
 
 // ─── Toast 通知 ────────────────────────────────────────────────────────────
