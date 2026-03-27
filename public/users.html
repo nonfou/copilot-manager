@@ -178,6 +178,7 @@ async function deleteUser(userId, username) {
 // 初始化
 async function init() {
   await Promise.all([checkAuth(), loadSidebar('/ui/users.html')])
+  requireAdmin()
   await loadUsers()
 }
 init()

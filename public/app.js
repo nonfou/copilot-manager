@@ -91,6 +91,17 @@ function updateUIForUser(user) {
   if (usersNav) {
     usersNav.classList.toggle('hidden', user.role !== 'admin')
   }
+
+  // 非 admin 隐藏 admin-only 导航项
+  document.querySelectorAll('[data-admin-only]').forEach(el => {
+    el.classList.toggle('hidden', user.role !== 'admin')
+  })
+}
+
+function requireAdmin() {
+  if (currentUser && currentUser.role !== 'admin') {
+    window.location.href = '/ui/key-detail.html'
+  }
 }
 
 async function logout() {
@@ -260,3 +271,4 @@ window.checkAuth = checkAuth
 window.logout = logout
 window.loadSidebar = loadSidebar
 window.getCurrentUser = () => currentUser
+window.requireAdmin = requireAdmin

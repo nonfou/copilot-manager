@@ -258,10 +258,14 @@ export function getLogs(options?: {
   page?: number
   limit?: number
   accountId?: string
+  apiKeyId?: string
 }): { logs: RequestLog[]; total: number } {
   let filtered = state.logs
   if (options?.accountId) {
     filtered = filtered.filter((l) => l.account_id === options.accountId)
+  }
+  if (options?.apiKeyId) {
+    filtered = filtered.filter((l) => l.api_key_id === options.apiKeyId)
   }
   // 倒序（最新在前）
   const reversed = [...filtered].reverse()

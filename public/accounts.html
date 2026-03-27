@@ -586,6 +586,7 @@ function toggleVis(inputId, btn) {
 
 async function init() {
   await Promise.all([checkAuth(), loadSidebar('/ui/accounts.html')])
+  requireAdmin()
   await loadAccounts()
 }
 

@@ -112,6 +112,7 @@ function renderLogs(res) {
 
 async function init() {
   await Promise.all([checkAuth(), loadSidebar('/ui/logs.html')])
+  requireAdmin()
   await loadAccountFilter()
   await loadLogs(1)
 }

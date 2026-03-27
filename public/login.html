@@ -144,8 +144,9 @@ async function checkStatus() {
     // 再检查当前 session（通过 Cookie）
     const meRes = await fetch('/api/auth/me', { credentials: 'same-origin' })
     if (meRes.ok) {
-      // 已登录，跳转到首页
-      window.location.href = '/ui/'
+      // 已登录，按角色跳转
+      const meData = await meRes.json()
+      window.location.href = meData.role === 'admin' ? '/ui/' : '/ui/key-detail.html'
     }
   } catch (err) {
     console.error('Status check failed:', err)
@@ -183,8 +184,10 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
       throw new Error(data.error || '请求失败')
     }
 
-    // 登录成功
-    window.location.href = '/ui/'
+    // 登录成功，按角色跳转
+    const meRes = await fetch('/api/auth/me', { credentials: 'same-origin' })
+    const meData = await meRes.json()
+    window.location.href = meData.role === 'admin' ? '/ui/' : '/ui/key-detail.html'
   } catch (err) {
     errorBox.textContent = err.message
     errorBox.style.display = 'block'

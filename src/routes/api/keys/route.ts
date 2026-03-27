@@ -59,6 +59,23 @@ keyRoutes.post("/", zValidator("json", createKeySchema), (c) => {
   return c.json({ ...key }, 201)
 })
 
+// ─── 单个 Key 详情 ──────────────────────────────────────────────────────────
+
+keyRoutes.get("/:id", (c) => {
+  const id = c.req.param("id")
+  const userId = getCurrentUserId(c)
+  const admin = isAdmin(c)
+  const key = store.getKeyById(id, admin ? undefined : userId)
+  if (!key) return c.json({ error: "Key not found or no permission" }, 404)
+  const account = store.getAccountById(key.account_id)
+  return c.json({
+    ...maskKey(key),
+    account: account
+      ? { id: account.id, name: account.name, account_type: account.account_type, api_url: account.api_url }
+      : null,
+  })
+})
+
 // ─── 更新 Key ──────────────────────────────────────────────────────────────
 
 const updateKeySchema = z.object({
