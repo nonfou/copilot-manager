@@ -55,13 +55,14 @@
             <th>账号</th>
             <th>Key</th>
             <th>方法</th>
+            <th>模型</th>
             <th>路径</th>
             <th>状态码</th>
             <th>耗时</th>
           </tr>
         </thead>
         <tbody id="recent-logs">
-          <tr><td colspan="7" class="table-empty">加载中...</td></tr>
+          <tr><td colspan="8" class="table-empty">加载中...</td></tr>
         </tbody>
       </table>
     </div>
@@ -84,7 +85,7 @@ async function loadData() {
 
     const tbody = document.getElementById('recent-logs')
     if (!logsRes.logs.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="table-empty">暂无请求记录</td></tr>'
+      tbody.innerHTML = '<tr><td colspan="8" class="table-empty">暂无请求记录</td></tr>'
       return
     }
     tbody.innerHTML = logsRes.logs.map(log => `
@@ -93,6 +94,7 @@ async function loadData() {
         <td>${escHtml(log.account_name)}</td>
         <td class="text-muted">${escHtml(log.api_key_name)}</td>
         <td><code>${escHtml(log.method)}</code></td>
+        <td class="text-muted">${escHtml(log.model ?? '-')}</td>
         <td class="monospace">${escHtml(log.path)}</td>
         <td>${statusCodeBadge(log.status_code)}</td>
         <td class="text-muted">${formatDuration(log.duration_ms)}</td>
