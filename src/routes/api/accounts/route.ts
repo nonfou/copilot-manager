@@ -127,9 +127,14 @@ accountRoutes.get("/:id/usage", async (c) => {
   const userId = getCurrentUserId(c)
   const admin = isAdmin(c)
 
-  const account = store.getAccountById(id, admin ? undefined : userId)
+  const account = store.getAccountById(id)
   if (!account) {
     return c.json({ error: "Account not found or no permission" }, 404)
+  }
+  // 非 admin：必须拥有该账号，或持有该账号下的 Key
+  if (!admin && account.owner_id !== userId) {
+    const hasKey = store.getKeys(userId, id).length > 0
+    if (!hasKey) return c.json({ error: "Account not found or no permission" }, 404)
   }
 
   if (!account.api_url) {
@@ -169,9 +174,14 @@ accountRoutes.get("/:id/models", async (c) => {
   const userId = getCurrentUserId(c)
   const admin = isAdmin(c)
 
-  const account = store.getAccountById(id, admin ? undefined : userId)
+  const account = store.getAccountById(id)
   if (!account) {
     return c.json({ error: "Account not found or no permission" }, 404)
+  }
+  // 非 admin：必须拥有该账号，或持有该账号下的 Key
+  if (!admin && account.owner_id !== userId) {
+    const hasKey = store.getKeys(userId, id).length > 0
+    if (!hasKey) return c.json({ error: "Account not found or no permission" }, 404)
   }
 
   if (!account.api_url) {
