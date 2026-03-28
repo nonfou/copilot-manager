@@ -70,5 +70,5 @@ server.use("/ui/*", serveStatic({ root: "./public", rewriteRequestPath: (path) =
 server.get("/ui", (c) => c.redirect("/ui/"))
 server.get("/", (c) => c.redirect("/ui/"))
 
-// ─── 代理：转发所有其他请求到对应的 copilot-api 实例 ───────────────────────
-server.route("/", proxyRoutes)
+// ─── 代理：仅转发 /v1/* 请求到对应的 copilot-api 实例 ─────────────────────
+server.route("/v1", proxyRoutes)
