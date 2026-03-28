@@ -339,3 +339,128 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 
 .token-field-wrap { position: relative; }
 .token-field-wrap .toggle-vis { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 13px; }
+
+/* ─── Role Badges ─────────────────────────────────────────────────────── */
+.badge.role-admin { background: rgba(139,92,246,0.15); color: #a78bfa; }
+.badge.role-user { background: rgba(59,130,246,0.15); color: var(--info); }
+
+/* ─── Skeleton Screen ─────────────────────────────────────────────────── */
+.skeleton {
+  display: inline-block;
+  background: linear-gradient(90deg, var(--surface2) 25%, var(--border) 50%, var(--surface2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease infinite;
+  border-radius: var(--radius-sm);
+  height: 14px;
+  vertical-align: middle;
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+tr.skeleton-row td { border-bottom: 1px solid var(--border); }
+
+/* ─── Empty State ─────────────────────────────────────────────────────── */
+.empty-state {
+  text-align: center;
+  padding: 56px 20px;
+  color: var(--text-muted);
+}
+.empty-state .empty-icon { font-size: 44px; margin-bottom: 14px; opacity: 0.5; line-height: 1; }
+.empty-state .empty-title { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+.empty-state .empty-desc { font-size: 13px; margin-bottom: 18px; }
+
+/* ─── Form Inline Validation ──────────────────────────────────────────── */
+.form-error { font-size: 12px; color: var(--error); margin-top: 4px; display: none; }
+.form-error.visible { display: block; }
+.form-input.error, .form-select.error { border-color: var(--error); }
+.form-input.error:focus, .form-select.error:focus { border-color: var(--error); box-shadow: 0 0 0 2px rgba(239,68,68,0.2); }
+
+/* ─── Confirm Modal ───────────────────────────────────────────────────── */
+.confirm-modal { max-width: 400px; text-align: center; }
+.confirm-modal .confirm-icon { font-size: 36px; margin-bottom: 10px; }
+.confirm-modal .confirm-title { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+.confirm-modal .confirm-message { color: var(--text-muted); font-size: 13px; margin-bottom: 6px; line-height: 1.5; }
+.confirm-modal .confirm-target { color: var(--text); font-weight: 600; word-break: break-all; font-size: 13px; margin-bottom: 4px; }
+.confirm-modal .modal-footer { justify-content: center; }
+
+/* ─── Usage Bar (shared) ──────────────────────────────────────────────── */
+.usage-bar-wrap { min-width: 140px; }
+.usage-bar-bg { background: var(--border); border-radius: 4px; height: 8px; overflow: hidden; margin: 4px 0; }
+.usage-bar-fill { height: 100%; border-radius: 4px; background: var(--primary); transition: width .3s; }
+.usage-bar-fill.warn { background: #f59e0b; }
+.usage-bar-fill.danger { background: #ef4444; }
+.usage-text { font-size: 11px; color: var(--text-muted); }
+.usage-unlimited { font-size: 12px; color: var(--text-muted); }
+.usage-loading { font-size: 12px; color: var(--text-muted); }
+
+/* ─── Login Page ──────────────────────────────────────────────────────── */
+.login-layout {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+}
+.login-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2.5rem;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: var(--shadow);
+}
+.login-header { text-align: center; margin-bottom: 2rem; }
+.login-header h1 { font-size: 1.5rem; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+.login-header p { color: var(--text-muted); font-size: 13px; }
+.login-form-group { margin-bottom: 16px; }
+.login-form-group label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 500; color: var(--text-muted); }
+.login-form-group input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.login-form-group input:focus { border-color: var(--primary); }
+.login-form-group input::placeholder { color: var(--text-muted); }
+.login-form-group input:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-login {
+  width: 100%;
+  padding: 10px;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+  margin-top: 4px;
+}
+.btn-login:hover:not(:disabled) { background: var(--primary-hover); }
+.btn-login:disabled { opacity: 0.5; cursor: not-allowed; }
+.login-error {
+  background: rgba(239,68,68,0.1);
+  border: 1px solid rgba(239,68,68,0.3);
+  color: var(--error);
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 14px;
+  font-size: 13px;
+  display: none;
+}
+.login-notice {
+  background: rgba(245,158,11,0.1);
+  border: 1px solid rgba(245,158,11,0.3);
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 16px;
+  color: var(--warning);
+  font-size: 13px;
+}

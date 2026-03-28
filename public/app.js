@@ -258,6 +258,138 @@ document.addEventListener('click', (e) => {
   }
 })
 
+// Escape 键关闭可见 Modal
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return
+  // 确认对话框优先处理
+  const confirmOverlay = document.getElementById('_confirm-overlay')
+  if (confirmOverlay && !confirmOverlay.classList.contains('hidden')) {
+    _resolveConfirm(false)
+    return
+  }
+  const visible = document.querySelector('.modal-overlay:not(.hidden)')
+  if (visible) visible.classList.add('hidden')
+})
+
+// ─── 自定义确认对话框 ──────────────────────────────────────────────────────
+
+let _confirmResolve = null
+
+function _ensureConfirmModal() {
+  if (document.getElementById('_confirm-overlay')) return
+  const el = document.createElement('div')
+  el.id = '_confirm-overlay'
+  el.className = 'modal-overlay hidden'
+  el.innerHTML = `
+    <div class="modal confirm-modal">
+      <div class="confirm-icon" id="_confirm-icon"></div>
+      <div class="confirm-title" id="_confirm-title"></div>
+      <div class="confirm-message" id="_confirm-message"></div>
+      <div class="confirm-target" id="_confirm-target"></div>
+      <div class="modal-footer" style="margin-top:20px;">
+        <button class="btn btn-secondary" id="_confirm-cancel">取消</button>
+        <button class="btn btn-danger" id="_confirm-ok"></button>
+      </div>
+    </div>
+  `
+  document.body.appendChild(el)
+  document.getElementById('_confirm-cancel').addEventListener('click', () => _resolveConfirm(false))
+  document.getElementById('_confirm-ok').addEventListener('click', () => _resolveConfirm(true))
+}
+
+function _resolveConfirm(value) {
+  const overlay = document.getElementById('_confirm-overlay')
+  if (overlay) overlay.classList.add('hidden')
+  if (_confirmResolve) {
+    _confirmResolve(value)
+    _confirmResolve = null
+  }
+}
+
+/**
+ * 显示自定义确认对话框
+ * @param {{ title: string, message?: string, target?: string, confirmText?: string, danger?: boolean }} opts
+ * @returns {Promise<boolean>}
+ */
+function showConfirm(opts) {
+  _ensureConfirmModal()
+  const { title, message, target, confirmText = '确认', danger = true } = opts
+  document.getElementById('_confirm-icon').textContent = danger ? '⚠️' : 'ℹ️'
+  document.getElementById('_confirm-title').textContent = title
+  const msgEl = document.getElementById('_confirm-message')
+  msgEl.textContent = message || ''
+  msgEl.style.display = message ? '' : 'none'
+  const targetEl = document.getElementById('_confirm-target')
+  targetEl.textContent = target || ''
+  targetEl.style.display = target ? '' : 'none'
+  const okBtn = document.getElementById('_confirm-ok')
+  okBtn.textContent = confirmText
+  okBtn.className = `btn ${danger ? 'btn-danger' : 'btn-primary'}`
+  document.getElementById('_confirm-overlay').classList.remove('hidden')
+  return new Promise(resolve => { _confirmResolve = resolve })
+}
+
+// ─── 表单内联验证 ──────────────────────────────────────────────────────────
+
+/**
+ * 在输入框下方显示错误提示
+ */
+function showFieldError(inputId, msg) {
+  const input = document.getElementById(inputId)
+  if (!input) return
+  input.classList.add('error')
+  let errEl = input.parentElement.querySelector('.form-error')
+  if (!errEl) {
+    errEl = document.createElement('div')
+    errEl.className = 'form-error'
+    input.parentElement.appendChild(errEl)
+  }
+  errEl.textContent = msg
+  errEl.classList.add('visible')
+  input.focus()
+}
+
+/**
+ * 清除表单内所有字段错误
+ */
+function clearFieldErrors(formId) {
+  const root = formId ? document.getElementById(formId) : document.body
+  if (!root) return
+  root.querySelectorAll('.form-input.error, .form-select.error').forEach(el => el.classList.remove('error'))
+  root.querySelectorAll('.form-error.visible').forEach(el => {
+    el.classList.remove('visible')
+    el.textContent = ''
+  })
+}
+
+// ─── 共享用量渲染 ──────────────────────────────────────────────────────────
+
+/**
+ * 将用量 API 响应数据渲染为 HTML 字符串
+ */
+function renderUsageHtml(data) {
+  const snapshots = data?.quota_snapshots
+  const premium = snapshots?.premium_interactions
+  if (!premium) return '<span class="usage-unlimited">-</span>'
+  if (premium.unlimited) return '<span class="usage-unlimited">无限制</span>'
+
+  const entitlement = premium.entitlement ?? 0
+  const remaining = premium.remaining ?? 0
+  const used = entitlement - remaining
+  const pct = entitlement > 0 ? Math.round((used / entitlement) * 100) : 0
+  const resetDate = data.quota_reset_date_utc
+    ? new Date(data.quota_reset_date_utc).toLocaleDateString('zh-CN')
+    : ''
+  const fillClass = pct >= 90 ? 'danger' : pct >= 70 ? 'warn' : ''
+
+  return `
+    <div class="usage-bar-wrap">
+      <div class="usage-bar-bg"><div class="usage-bar-fill ${fillClass}" style="width:${pct}%"></div></div>
+      <div class="usage-text">${used}/${entitlement} 已用 (${pct}%)${resetDate ? `，重置：${resetDate}` : ''}</div>
+    </div>
+  `
+}
+
 // ─── 导出全局 ─────────────────────────────────────────────────────────────
 
 window.api = api
@@ -275,3 +407,7 @@ window.logout = logout
 window.loadSidebar = loadSidebar
 window.getCurrentUser = () => currentUser
 window.requireAdmin = requireAdmin
+window.showConfirm = showConfirm
+window.showFieldError = showFieldError
+window.clearFieldErrors = clearFieldErrors
+window.renderUsageHtml = renderUsageHtml

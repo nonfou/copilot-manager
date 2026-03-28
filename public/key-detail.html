@@ -6,13 +6,6 @@
   <title>Key 详情 - Copilot Manager</title>
   <link rel="stylesheet" href="style.css">
   <style>
-    .usage-bar-wrap { min-width: 140px; }
-    .usage-bar-bg { background: var(--border); border-radius: 4px; height: 8px; overflow: hidden; margin: 4px 0; }
-    .usage-bar-fill { height: 100%; border-radius: 4px; background: var(--primary); transition: width .3s; }
-    .usage-bar-fill.warn { background: #f59e0b; }
-    .usage-bar-fill.danger { background: #ef4444; }
-    .usage-text { font-size: 11px; color: var(--text-muted); }
-    .usage-unlimited { font-size: 12px; color: var(--text-muted); }
     .info-row { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
     .info-label { color: var(--text-muted); font-size: 13px; min-width: 76px; flex-shrink: 0; }
     .info-value { font-size: 14px; word-break: break-all; }
@@ -61,7 +54,7 @@
         <div class="card" id="usage-card">
           <div class="table-header" style="margin-bottom:12px;">
             <span class="table-title">账号用量</span>
-            <button class="btn btn-secondary btn-sm" onclick="refreshUsage()">↻ 刷新</button>
+            <button class="btn btn-secondary btn-sm" id="refresh-usage-btn" onclick="refreshUsage(this)">↻ 刷新</button>
           </div>
           <div id="usage-content"><span class="text-muted">加载中...</span></div>
         </div>
@@ -70,7 +63,7 @@
         <div class="card" id="models-card">
           <div class="table-header" style="margin-bottom:12px;">
             <span class="table-title">可用模型</span>
-            <button class="btn btn-secondary btn-sm" onclick="refreshModels()">↻ 刷新</button>
+            <button class="btn btn-secondary btn-sm" id="refresh-models-btn" onclick="refreshModels(this)">↻ 刷新</button>
           </div>
           <div id="models-content"><span class="text-muted">加载中...</span></div>
         </div>
@@ -95,7 +88,8 @@
             </tr>
           </thead>
           <tbody id="logs-table">
-            <tr><td colspan="7" class="table-empty">加载中...</td></tr>
+            <tr class="skeleton-row"><td><span class="skeleton" style="width:90px"></span></td><td><span class="skeleton" style="width:40px"></span></td><td><span class="skeleton" style="width:80px"></span></td><td><span class="skeleton" style="width:120px"></span></td><td><span class="skeleton" style="width:40px"></span></td><td><span class="skeleton" style="width:40px"></span></td><td><span class="skeleton" style="width:60px"></span></td></tr>
+            <tr class="skeleton-row"><td><span class="skeleton" style="width:90px"></span></td><td><span class="skeleton" style="width:40px"></span></td><td><span class="skeleton" style="width:90px"></span></td><td><span class="skeleton" style="width:130px"></span></td><td><span class="skeleton" style="width:40px"></span></td><td><span class="skeleton" style="width:40px"></span></td><td><span class="skeleton" style="width:60px"></span></td></tr>
           </tbody>
         </table>
         <div class="pagination">
@@ -226,46 +220,20 @@ async function loadUsage(accountId, forceRefresh = false) {
   try {
     const url = `/accounts/${accountId}/usage` + (forceRefresh ? '?refresh=true' : '')
     const data = await api.get(url)
-    renderUsage(el, data)
+    el.innerHTML = renderUsageHtml(data)
   } catch (err) {
-    el.innerHTML = `<span style="color:var(--danger)">获取失败：${escHtml(err.message)}</span>`
+    el.innerHTML = `<span style="color:var(--error)">获取失败：${escHtml(err.message)}</span>`
   }
 }
 
-function renderUsage(el, data) {
-  const snapshots = data?.quota_snapshots
-  const premium = snapshots?.premium_interactions
-
-  if (!premium) {
-    el.innerHTML = '<span class="usage-unlimited">-</span>'
-    return
-  }
-
-  if (premium.unlimited) {
-    el.innerHTML = '<span class="usage-unlimited">无限制</span>'
-    return
-  }
-
-  const entitlement = premium.entitlement ?? 0
-  const remaining = premium.remaining ?? 0
-  const used = entitlement - remaining
-  const pct = entitlement > 0 ? Math.round((used / entitlement) * 100) : 0
-  const resetDate = data.quota_reset_date_utc
-    ? new Date(data.quota_reset_date_utc).toLocaleDateString('zh-CN')
-    : ''
-  const fillClass = pct >= 90 ? 'danger' : pct >= 70 ? 'warn' : ''
-
-  el.innerHTML = `
-    <div class="usage-bar-wrap">
-      <div class="usage-bar-bg"><div class="usage-bar-fill ${fillClass}" style="width:${pct}%"></div></div>
-      <div class="usage-text">${used}/${entitlement} 已用 (${pct}%)${resetDate ? `，重置：${resetDate}` : ''}</div>
-    </div>
-  `
-}
-
-async function refreshUsage() {
+async function refreshUsage(btn) {
   if (!currentKeyData?.account) return
+  const origHtml = btn.innerHTML
+  btn.disabled = true
+  btn.innerHTML = '<span class="spinner"></span>'
   await loadUsage(currentKeyData.account.id, true)
+  btn.disabled = false
+  btn.innerHTML = origHtml
 }
 
 async function loadModels(accountId, forceRefresh = false) {
@@ -291,13 +259,18 @@ async function loadModels(accountId, forceRefresh = false) {
       </div>
     `
   } catch (err) {
-    el.innerHTML = `<span style="color:var(--danger)">获取失败：${escHtml(err.message)}</span>`
+    el.innerHTML = `<span style="color:var(--error)">获取失败：${escHtml(err.message)}</span>`
   }
 }
 
-async function refreshModels() {
+async function refreshModels(btn) {
   if (!currentKeyData?.account) return
+  const origHtml = btn.innerHTML
+  btn.disabled = true
+  btn.innerHTML = '<span class="spinner"></span>'
   await loadModels(currentKeyData.account.id, true)
+  btn.disabled = false
+  btn.innerHTML = origHtml
 }
 
 async function loadLogs(page = 1) {
@@ -320,7 +293,13 @@ async function loadLogs(page = 1) {
 function renderLogs(res) {
   const tbody = document.getElementById('logs-table')
   if (!res.logs.length) {
-    tbody.innerHTML = '<tr><td colspan="7" class="table-empty">暂无请求日志</td></tr>'
+    tbody.innerHTML = `
+      <tr><td colspan="7">
+        <div class="empty-state" style="padding:32px 20px;">
+          <div class="empty-icon" style="font-size:32px;">📋</div>
+          <div class="empty-title">暂无请求日志</div>
+        </div>
+      </td></tr>`
   } else {
     tbody.innerHTML = res.logs.map(log => `
       <tr>

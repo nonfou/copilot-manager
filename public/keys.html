@@ -44,7 +44,9 @@
           </tr>
         </thead>
         <tbody id="keys-table">
-          <tr><td colspan="8" class="table-empty">加载中...</td></tr>
+          <tr class="skeleton-row"><td><span class="skeleton" style="width:80px"></span></td><td><span class="skeleton" style="width:70px"></span></td><td><span class="skeleton" style="width:90px"></span></td><td><span class="skeleton" style="width:120px"></span></td><td><span class="skeleton" style="width:45px"></span></td><td><span class="skeleton" style="width:30px"></span></td><td><span class="skeleton" style="width:90px"></span></td><td><span class="skeleton" style="width:100px"></span></td></tr>
+          <tr class="skeleton-row"><td><span class="skeleton" style="width:100px"></span></td><td><span class="skeleton" style="width:60px"></span></td><td><span class="skeleton" style="width:80px"></span></td><td><span class="skeleton" style="width:130px"></span></td><td><span class="skeleton" style="width:45px"></span></td><td><span class="skeleton" style="width:30px"></span></td><td><span class="skeleton" style="width:90px"></span></td><td><span class="skeleton" style="width:100px"></span></td></tr>
+          <tr class="skeleton-row"><td><span class="skeleton" style="width:70px"></span></td><td><span class="skeleton" style="width:80px"></span></td><td><span class="skeleton" style="width:100px"></span></td><td><span class="skeleton" style="width:110px"></span></td><td><span class="skeleton" style="width:45px"></span></td><td><span class="skeleton" style="width:30px"></span></td><td><span class="skeleton" style="width:90px"></span></td><td><span class="skeleton" style="width:100px"></span></td></tr>
         </tbody>
       </table>
     </div>
@@ -144,10 +146,8 @@ async function loadAccountOptions() {
     accounts = await api.get('/accounts')
     const filter = document.getElementById('filter-account')
     const select = document.getElementById('new-key-account')
-    // 过滤器下拉
     filter.innerHTML = '<option value="">所有账号</option>' +
       accounts.map(a => `<option value="${a.id}">${escHtml(a.name)}</option>`).join('')
-    // 创建 Key 下拉
     select.innerHTML = accounts.length
       ? accounts.map(a => `<option value="${a.id}">${escHtml(a.name)}</option>`).join('')
       : '<option value="">（暂无账号，请先添加）</option>'
@@ -182,10 +182,17 @@ async function loadKeys() {
 function renderKeys(keys) {
   const tbody = document.getElementById('keys-table')
   if (!keys.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="table-empty">暂无 Key，点击「新建 Key」添加</td></tr>'
+    tbody.innerHTML = `
+      <tr><td colspan="8">
+        <div class="empty-state">
+          <div class="empty-icon">🔑</div>
+          <div class="empty-title">暂无 API Key</div>
+          <div class="empty-desc">新建 Key 并分配给用户</div>
+          <button class="btn btn-primary" onclick="openCreateModal()">+ 新建 Key</button>
+        </div>
+      </td></tr>`
     return
   }
-  // 找账号名
   const accMap = {}
   accounts.forEach(a => { accMap[a.id] = a.name })
 
@@ -212,14 +219,16 @@ function renderKeys(keys) {
 
 function openCreateModal() {
   document.getElementById('new-key-name').value = ''
+  clearFieldErrors('modal-create-key')
   openModal('modal-create-key')
 }
 
 async function createKey() {
+  clearFieldErrors('modal-create-key')
   const name = document.getElementById('new-key-name').value.trim()
   const account_id = document.getElementById('new-key-account').value
   const owner_id = document.getElementById('new-key-owner').value
-  if (!name) { toast('请填写 Key 名称', 'warning'); return }
+  if (!name) { showFieldError('new-key-name', '请填写 Key 名称'); return }
   if (!account_id) { toast('请选择关联账号', 'warning'); return }
   const body = { name, account_id }
   if (owner_id) body.owner_id = owner_id
@@ -230,7 +239,7 @@ async function createKey() {
     closeModal('modal-create-key')
     openModal('modal-key-reveal')
     if (_revealClearTimer) clearTimeout(_revealClearTimer)
-    _revealClearTimer = setTimeout(_clearRevealedKey, 5 * 60 * 1000) // 5 分钟后自动清空
+    _revealClearTimer = setTimeout(_clearRevealedKey, 5 * 60 * 1000)
     await loadKeys()
   } catch (err) {
     toast(err.message, 'error')
@@ -240,7 +249,6 @@ async function createKey() {
 function copyRevealedKey() {
   if (!revealedKey) return
   copyToClipboard(revealedKey)
-  // 复制成功后立即清空内存中的 Key
   setTimeout(_clearRevealedKey, 500)
 }
 
@@ -248,14 +256,16 @@ function editKey(id, name, enabled) {
   document.getElementById('edit-key-id').value = id
   document.getElementById('edit-key-name').value = name
   document.getElementById('edit-key-enabled').value = String(enabled)
+  clearFieldErrors('modal-edit-key')
   openModal('modal-edit-key')
 }
 
 async function saveKeyEdit() {
+  clearFieldErrors('modal-edit-key')
   const id = document.getElementById('edit-key-id').value
   const name = document.getElementById('edit-key-name').value.trim()
   const enabled = document.getElementById('edit-key-enabled').value === 'true'
-  if (!name) { toast('请填写 Key 名称', 'warning'); return }
+  if (!name) { showFieldError('edit-key-name', '请填写 Key 名称'); return }
   try {
     await api.put(`/keys/${id}`, { name, enabled })
     toast('保存成功', 'success')
@@ -267,7 +277,14 @@ async function saveKeyEdit() {
 }
 
 async function regenerateKey(id, name, btn) {
-  if (!confirm(`确认重新生成 Key「${name}」？\n旧的 Key 将立即失效。`)) return
+  const confirmed = await showConfirm({
+    title: '重新生成 Key',
+    message: '旧的 Key 将立即失效。',
+    target: name,
+    confirmText: '重新生成',
+    danger: true,
+  })
+  if (!confirmed) return
   const origText = btn.textContent
   btn.disabled = true
   btn.textContent = '生成中...'
@@ -277,7 +294,7 @@ async function regenerateKey(id, name, btn) {
     document.getElementById('key-reveal-value').textContent = key.key
     openModal('modal-key-reveal')
     if (_revealClearTimer) clearTimeout(_revealClearTimer)
-    _revealClearTimer = setTimeout(_clearRevealedKey, 5 * 60 * 1000) // 5 分钟后自动清空
+    _revealClearTimer = setTimeout(_clearRevealedKey, 5 * 60 * 1000)
     await loadKeys()
   } catch (err) {
     toast(err.message, 'error')
@@ -287,7 +304,14 @@ async function regenerateKey(id, name, btn) {
 }
 
 async function deleteKey(id, name, btn) {
-  if (!confirm(`确认删除 Key「${name}」？`)) return
+  const confirmed = await showConfirm({
+    title: '删除 Key',
+    message: '此操作不可恢复。',
+    target: name,
+    confirmText: '删除',
+    danger: true,
+  })
+  if (!confirmed) return
   const origText = btn.textContent
   btn.disabled = true
   btn.textContent = '删除中...'

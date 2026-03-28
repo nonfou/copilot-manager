@@ -40,7 +40,9 @@
           </tr>
         </thead>
         <tbody id="logs-table">
-          <tr><td colspan="9" class="table-empty">加载中...</td></tr>
+          <tr class="skeleton-row"><td><span class="skeleton" style="width:90px"></span></td><td><span class="skeleton" style="width:70px"></span></td><td><span class="skeleton" style="width:60px"></span></td><td><span class="skeleton" style="width:40px"></span></td><td><span class="skeleton" style="width:80px"></span></td><td><span class="skeleton" style="width:120px"></span></td><td><span class="skeleton" style="width:40px"></span></td><td><span class="skeleton" style="width:40px"></span></td><td><span class="skeleton" style="width:60px"></span></td></tr>
+          <tr class="skeleton-row"><td><span class="skeleton" style="width:90px"></span></td><td><span class="skeleton" style="width:60px"></span></td><td><span class="skeleton" style="width:70px"></span></td><td><span class="skeleton" style="width:40px"></span></td><td><span class="skeleton" style="width:90px"></span></td><td><span class="skeleton" style="width:130px"></span></td><td><span class="skeleton" style="width:40px"></span></td><td><span class="skeleton" style="width:40px"></span></td><td><span class="skeleton" style="width:60px"></span></td></tr>
+          <tr class="skeleton-row"><td><span class="skeleton" style="width:90px"></span></td><td><span class="skeleton" style="width:80px"></span></td><td><span class="skeleton" style="width:50px"></span></td><td><span class="skeleton" style="width:40px"></span></td><td><span class="skeleton" style="width:70px"></span></td><td><span class="skeleton" style="width:110px"></span></td><td><span class="skeleton" style="width:40px"></span></td><td><span class="skeleton" style="width:40px"></span></td><td><span class="skeleton" style="width:60px"></span></td></tr>
         </tbody>
       </table>
 
@@ -85,7 +87,14 @@ async function loadLogs(page = 1) {
 function renderLogs(res) {
   const tbody = document.getElementById('logs-table')
   if (!res.logs.length) {
-    tbody.innerHTML = '<tr><td colspan="9" class="table-empty">暂无日志</td></tr>'
+    tbody.innerHTML = `
+      <tr><td colspan="9">
+        <div class="empty-state">
+          <div class="empty-icon">📋</div>
+          <div class="empty-title">暂无日志</div>
+          <div class="empty-desc">代理请求将在此处记录</div>
+        </div>
+      </td></tr>`
   } else {
     tbody.innerHTML = res.logs.map(log => `
       <tr>
