@@ -24,6 +24,9 @@ const SESSION_EXPIRY_MS = 24 * 60 * 60 * 1000
 const MAX_ATTEMPTS = 5
 const LOCK_DURATION_MS = 15 * 60 * 1000 // 15 分钟
 
+// 是否信任 X-Forwarded-For（仅在明确配置反向代理时开启）
+const TRUST_PROXY = process.env.TRUSTED_PROXY === "true"
+
 interface AttemptRecord {
   count: number
   lockedUntil: number
@@ -32,16 +35,18 @@ interface AttemptRecord {
 const loginAttempts = new Map<string, AttemptRecord>()
 
 function getClientIp(c: Context): string {
-  return (
-    c.req.header("X-Forwarded-For")?.split(",")[0]?.trim() ||
-    c.req.header("X-Real-IP") ||
-    "unknown"
-  )
+  if (TRUST_PROXY) {
+    const forwarded = c.req.header("X-Forwarded-For")?.split(",")[0]?.trim()
+    if (forwarded) return forwarded
+    const realIp = c.req.header("X-Real-IP")
+    if (realIp) return realIp
+  }
+  return "unknown"
 }
 
-function checkRateLimit(ip: string): { allowed: boolean; retryAfter?: number } {
+function checkRateLimit(key: string): { allowed: boolean; retryAfter?: number } {
   const now = Date.now()
-  const record = loginAttempts.get(ip)
+  const record = loginAttempts.get(key)
 
   if (record && record.lockedUntil > now) {
     return { allowed: false, retryAfter: Math.ceil((record.lockedUntil - now) / 1000) }
@@ -49,23 +54,24 @@ function checkRateLimit(ip: string): { allowed: boolean; retryAfter?: number } {
 
   // 锁定已过期，清除记录
   if (record && record.lockedUntil <= now) {
-    loginAttempts.delete(ip)
+    loginAttempts.delete(key)
   }
 
   return { allowed: true }
 }
 
-function recordFailedAttempt(ip: string): void {
-  const record = loginAttempts.get(ip) ?? { count: 0, lockedUntil: 0 }
+function recordFailedAttempt(key: string): void {
+  const record = loginAttempts.get(key) ?? { count: 0, lockedUntil: 0 }
   record.count++
   if (record.count >= MAX_ATTEMPTS) {
     record.lockedUntil = Date.now() + LOCK_DURATION_MS
   }
-  loginAttempts.set(ip, record)
+  loginAttempts.set(key, record)
 }
 
-function clearAttempts(ip: string): void {
+function clearAttempts(ip: string, username: string): void {
   loginAttempts.delete(ip)
+  loginAttempts.delete(`user:${username}`)
 }
 
 // ─── 工具函数 ─────────────────────────────────────────────────────────────
@@ -135,10 +141,22 @@ authRoutes.post("/login", async (c) => {
     return c.json({ error: "Username and password required" }, 400)
   }
 
+  // 用户名维度限流（不依赖 IP，防止 IP 轮换绕过）
+  const userKey = `user:${String(username).toLowerCase()}`
+  const userRateCheck = checkRateLimit(userKey)
+  if (!userRateCheck.allowed) {
+    return c.json(
+      { error: "登录尝试次数过多，请稍后再试。" },
+      429,
+      { "Retry-After": String(userRateCheck.retryAfter) },
+    )
+  }
+
   // 查找用户
   const user = getUserByUsername(username)
   if (!user) {
     recordFailedAttempt(ip)
+    recordFailedAttempt(userKey)
     return c.json({ error: "Invalid credentials" }, 401)
   }
 
@@ -146,11 +164,12 @@ authRoutes.post("/login", async (c) => {
   const valid = await verifyPassword(password, user.password_hash)
   if (!valid) {
     recordFailedAttempt(ip)
+    recordFailedAttempt(userKey)
     return c.json({ error: "Invalid credentials" }, 401)
   }
 
   // 登录成功，清除失败计数
-  clearAttempts(ip)
+  clearAttempts(ip, username)
 
   // 创建 session
   const now = new Date().toISOString()
@@ -168,6 +187,7 @@ authRoutes.post("/login", async (c) => {
     sameSite: "Strict",
     maxAge: SESSION_EXPIRY_MS / 1000,
     path: "/",
+    secure: process.env.NODE_ENV === "production" || process.env.HTTPS === "true",
   })
 
   // 更新最后登录时间

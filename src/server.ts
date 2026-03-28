@@ -14,8 +14,25 @@ import * as store from "./store/store"
 
 export const server = new Hono()
 
+// ─── 安全响应头（仅对非代理路由）────────────────────────────────────────────
+server.use("*", async (c, next) => {
+  await next()
+  // 代理路由直接透传上游响应头，不添加安全头
+  if (c.req.path.startsWith("/v1")) return
+  c.res.headers.set("X-Content-Type-Options", "nosniff")
+  c.res.headers.set("X-Frame-Options", "SAMEORIGIN")
+  c.res.headers.set("X-XSS-Protection", "1; mode=block")
+  c.res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin")
+  c.res.headers.set(
+    "Content-Security-Policy",
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'",
+  )
+})
+
 // ─── CORS ────────────────────────────────────────────────────────────────────
 // origin:"*" + credentials:true 违反 CORS 规范，改为函数式 origin
+const IS_PRODUCTION = process.env.NODE_ENV === "production"
+
 server.use(cors({
   origin: (origin) => {
     const allowed = process.env.CORS_ALLOWED_ORIGINS
@@ -24,8 +41,8 @@ server.use(cors({
       .filter(Boolean) ?? []
     // 无 origin 头 = 同源请求或 curl，直接放行
     if (!origin) return origin
-    // 未配置白名单则允许所有跨域（适合本地开发）
-    if (allowed.length === 0) return origin
+    // 生产环境：未配置白名单时拒绝所有跨域
+    if (allowed.length === 0) return IS_PRODUCTION ? null : origin
     return allowed.includes(origin) ? origin : null
   },
   credentials: true,

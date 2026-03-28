@@ -9,6 +9,55 @@ import type { Account, AccountType, AuthSession } from "../../../store/types"
 
 export const accountRoutes = new Hono()
 
+// ─── SSRF 防护：api_url 白名单校验 ──────────────────────────────────────────
+
+/**
+ * 校验 api_url 是否安全可访问：
+ * - 仅允许 http: / https: 协议
+ * - 拒绝 localhost / 127.x / ::1 / 私有 IP 段（10.x, 172.16-31.x, 192.168.x）
+ */
+function validateApiUrl(raw: string): { ok: true } | { ok: false; message: string } {
+  let url: URL
+  try {
+    url = new URL(raw)
+  } catch {
+    return { ok: false, message: "api_url 格式无效" }
+  }
+
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    return { ok: false, message: "api_url 只允许 http 或 https 协议" }
+  }
+
+  const host = url.hostname.toLowerCase()
+
+  // 拒绝 loopback
+  if (
+    host === "localhost" ||
+    host === "::1" ||
+    /^127\./.test(host) ||
+    host === "[::1]"
+  ) {
+    return { ok: false, message: "api_url 不允许指向 loopback 地址" }
+  }
+
+  // 拒绝私有 IP 段
+  const privatePatterns = [
+    /^10\./,
+    /^172\.(1[6-9]|2\d|3[01])\./,
+    /^192\.168\./,
+    /^169\.254\./, // link-local
+    /^fc00:/i,    // IPv6 ULA
+    /^fe80:/i,    // IPv6 link-local
+  ]
+  for (const pattern of privatePatterns) {
+    if (pattern.test(host)) {
+      return { ok: false, message: "api_url 不允许指向私有/内网 IP 地址" }
+    }
+  }
+
+  return { ok: true }
+}
+
 // ─── 用量缓存（5 分钟）──────────────────────────────────────────────────────
 
 interface UsageCache {
@@ -49,6 +98,12 @@ accountRoutes.post("/", zValidator("json", createAccountSchema), (c) => {
   if (!userId) {
     return c.json({ error: "Not authenticated" }, 401)
   }
+
+  const urlCheck = validateApiUrl(body.api_url)
+  if (!urlCheck.ok) {
+    return c.json({ error: urlCheck.message }, 400)
+  }
+
   const account: Account = {
     id: generateId("acc"),
     name: body.name,
@@ -79,6 +134,10 @@ accountRoutes.put("/:id", zValidator("json", updateAccountSchema), (c) => {
 
   const updateData: Partial<Account> = { ...body }
   if (body.api_url) {
+    const urlCheck = validateApiUrl(body.api_url)
+    if (!urlCheck.ok) {
+      return c.json({ error: urlCheck.message }, 400)
+    }
     updateData.api_url = body.api_url.replace(/\/$/, "")
   }
 
@@ -232,6 +291,11 @@ accountRoutes.post("/auth/start", zValidator("json", authStartSchema), async (c)
   const userId = getCurrentUserId(c)
   if (!userId) {
     return c.json({ error: "Not authenticated" }, 401)
+  }
+
+  const urlCheck = validateApiUrl(api_url)
+  if (!urlCheck.ok) {
+    return c.json({ error: urlCheck.message }, 400)
   }
 
   try {

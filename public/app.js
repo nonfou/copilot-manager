@@ -116,8 +116,12 @@ async function logout() {
 // ─── 侧边栏（统一 fetch 注入）────────────────────────────────────────────────
 
 /**
+ * 侧边栏 HTML 内存缓存（避免持久化 HTML 到 sessionStorage 引入 XSS 风险）
+ */
+let _sidebarHtmlCache = null
+
+/**
  * 加载侧边栏并高亮当前页链接
- * 使用 sessionStorage 缓存 sidebar HTML，避免每次页面导航时出现闪烁
  * @param {string} activeHref  当前页的 href，例如 '/ui/accounts.html'
  */
 async function loadSidebar(activeHref) {
@@ -125,19 +129,18 @@ async function loadSidebar(activeHref) {
     const el = document.getElementById('sidebar')
     if (!el) return
 
-    // 优先使用缓存，立即渲染（消除闪烁）
-    const cached = sessionStorage.getItem('sidebar_html')
-    if (cached) {
-      el.innerHTML = cached
+    // 优先使用内存缓存，立即渲染（消除闪烁）
+    if (_sidebarHtmlCache) {
+      el.innerHTML = _sidebarHtmlCache
       applySidebarActive(activeHref)
       if (currentUser) updateUIForUser(currentUser)
     }
 
-    // 后台静默更新缓存（不更改已渲染内容，除非确实有变化）
+    // 后台静默更新缓存
     const res = await fetch('/ui/sidebar.html')
     const html = await res.text()
-    if (html !== cached) {
-      sessionStorage.setItem('sidebar_html', html)
+    if (html !== _sidebarHtmlCache) {
+      _sidebarHtmlCache = html
       el.innerHTML = html
       applySidebarActive(activeHref)
       if (currentUser) updateUIForUser(currentUser)

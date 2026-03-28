@@ -13,9 +13,9 @@ let encryptionKey: Buffer | null = null
 export function initEncryption(): void {
   const keyHex = process.env.ENCRYPTION_KEY
   if (!keyHex) {
-    consola.warn("ENCRYPTION_KEY 未设置 — 敏感字段将以明文存储。")
-    consola.warn("在 .env 中设置 ENCRYPTION_KEY=<64 位 hex 字符串> 以启用静态加密。")
-    return
+    consola.error("ENCRYPTION_KEY 未设置 — 拒绝启动以防止敏感数据明文存储。")
+    consola.error("请在 .env 中设置 ENCRYPTION_KEY=<64 位 hex 字符串>（可用 openssl rand -hex 32 生成）。")
+    process.exit(1)
   }
   if (!/^[0-9a-fA-F]{64}$/.test(keyHex)) {
     consola.error("ENCRYPTION_KEY 必须是 64 个十六进制字符（32 字节）")

@@ -82,14 +82,14 @@
   <div class="modal">
     <div class="modal-header">
       <span class="modal-title">Key 创建成功</span>
-      <button class="modal-close" onclick="closeModal('modal-key-reveal')">×</button>
+    <button class="modal-close" onclick="closeRevealModal()">×</button>
     </div>
     <p>请立即复制并保存以下 API Key，<strong>它只会显示一次</strong>：</p>
     <div class="key-reveal" id="key-reveal-value"></div>
     <div class="key-reveal-note">⚠️ 离开此页面后将无法再次查看完整 Key 值</div>
     <div class="modal-footer">
       <button class="btn btn-primary" onclick="copyRevealedKey()">复制 Key</button>
-      <button class="btn btn-secondary" onclick="closeModal('modal-key-reveal')">关闭</button>
+      <button class="btn btn-secondary" onclick="closeRevealModal()">关闭</button>
     </div>
   </div>
 </div>
@@ -125,6 +125,19 @@
 let accounts = []
 let users = []
 let revealedKey = ''
+let _revealClearTimer = null
+
+function _clearRevealedKey() {
+  revealedKey = null
+  const el = document.getElementById('key-reveal-value')
+  if (el) el.textContent = ''
+  if (_revealClearTimer) { clearTimeout(_revealClearTimer); _revealClearTimer = null }
+}
+
+function closeRevealModal() {
+  _clearRevealedKey()
+  closeModal('modal-key-reveal')
+}
 
 async function loadAccountOptions() {
   try {
@@ -216,6 +229,8 @@ async function createKey() {
     document.getElementById('key-reveal-value').textContent = key.key
     closeModal('modal-create-key')
     openModal('modal-key-reveal')
+    if (_revealClearTimer) clearTimeout(_revealClearTimer)
+    _revealClearTimer = setTimeout(_clearRevealedKey, 5 * 60 * 1000) // 5 分钟后自动清空
     await loadKeys()
   } catch (err) {
     toast(err.message, 'error')
@@ -223,7 +238,10 @@ async function createKey() {
 }
 
 function copyRevealedKey() {
+  if (!revealedKey) return
   copyToClipboard(revealedKey)
+  // 复制成功后立即清空内存中的 Key
+  setTimeout(_clearRevealedKey, 500)
 }
 
 function editKey(id, name, enabled) {
@@ -258,6 +276,8 @@ async function regenerateKey(id, name, btn) {
     revealedKey = key.key
     document.getElementById('key-reveal-value').textContent = key.key
     openModal('modal-key-reveal')
+    if (_revealClearTimer) clearTimeout(_revealClearTimer)
+    _revealClearTimer = setTimeout(_clearRevealedKey, 5 * 60 * 1000) // 5 分钟后自动清空
     await loadKeys()
   } catch (err) {
     toast(err.message, 'error')

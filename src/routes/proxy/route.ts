@@ -5,6 +5,10 @@ import type { RequestLog } from "../../store/types"
 
 export const proxyRoutes = new Hono()
 
+// ─── 常量 ───────────────────────────────────────────────────────────────────
+
+const MAX_BODY_SIZE = 100 * 1024 * 1024 // 100MB
+
 // ─── 每 API Key 限流（固定窗口计数器）──────────────────────────────────────
 
 const RATE_LIMIT = parseInt(process.env.RATE_LIMIT_PER_MINUTE ?? "300")
@@ -88,7 +92,15 @@ proxyRoutes.all("/*", async (c) => {
 
   const hasBody = c.req.method !== "GET" && c.req.method !== "HEAD"
   if (hasBody && c.req.raw.body) {
+    // 检查请求体大小（先读 Content-Length 头快速拒绝）
+    const contentLength = parseInt(c.req.header("content-length") ?? "0")
+    if (contentLength > MAX_BODY_SIZE) {
+      return c.json({ error: "Request body too large" }, 413)
+    }
     bodyBuffer = await c.req.raw.arrayBuffer()
+    if (bodyBuffer.byteLength > MAX_BODY_SIZE) {
+      return c.json({ error: "Request body too large" }, 413)
+    }
     const contentType = c.req.header("content-type") ?? ""
     if (contentType.includes("application/json") && bodyBuffer.byteLength > 0) {
       try {
@@ -112,6 +124,7 @@ proxyRoutes.all("/*", async (c) => {
       method: c.req.method,
       headers,
       body: hasBody ? bodyBuffer : undefined,
+      signal: AbortSignal.timeout(600_000), // 600 秒超时（10 分钟，兼顾流式/长请求）
       // @ts-ignore - duplex required for streaming request bodies
       duplex: "half",
     })
@@ -136,7 +149,7 @@ proxyRoutes.all("/*", async (c) => {
       }
       store.appendLog(log)
     })
-    return c.json({ error: `Upstream error: ${errorMsg}` }, 502)
+    return c.json({ error: "Upstream service unavailable" }, 502)
   }
 
   const durationMs = Date.now() - startTime

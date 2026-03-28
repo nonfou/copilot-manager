@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs"
 import { join } from "node:path"
+import { timingSafeEqual } from "node:crypto"
 import { encrypt, decrypt } from "../lib/encrypt"
 import type {
   Account,
@@ -246,7 +247,17 @@ export function findKeyWithAccount(apiKey: string): {
   key: ApiKey
   account: Account | undefined
 } | null {
-  const key = state.keys.find((k) => k.key === apiKey && k.enabled)
+  const inputBuf = Buffer.from(apiKey)
+  const key = state.keys.find((k) => {
+    if (!k.enabled) return false
+    try {
+      const storedBuf = Buffer.from(k.key)
+      if (inputBuf.length !== storedBuf.length) return false
+      return timingSafeEqual(inputBuf, storedBuf)
+    } catch {
+      return false
+    }
+  })
   if (!key) return null
   const account = state.accounts.find((a) => a.id === key.account_id)
   return { key, account }
