@@ -50,13 +50,12 @@ server.use("/api/auth/change-password", authMiddleware)
 // ─── 认证 API（login/logout/status 无需认证）─────────────────────────────────
 server.route("/api/auth", authRoutes)
 
-// ─── 认证中间件 ──────────────────────────────────────────────────────────────
+// ─── 认证中间件（仅 API，静态文件不需要）──────────────────────────────────
 server.use("/api/accounts/*", authMiddleware)
 server.use("/api/keys/*", authMiddleware)
 server.use("/api/logs/*", authMiddleware)
 server.use("/api/stats/*", authMiddleware)
 server.use("/api/users/*", authMiddleware)
-server.use("/ui/*", authMiddleware)
 
 // ─── 管理 API ────────────────────────────────────────────────────────────────
 server.route("/api/accounts", accountRoutes)
