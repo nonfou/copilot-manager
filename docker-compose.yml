@@ -1,0 +1,20 @@
+services:
+  copilot-manager:
+    build: .
+    image: copilot-manager:latest
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-4242}:4242"
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - .env
+    environment:
+      # 容器内固定监听 4242，宿主机端口通过 HOST_PORT 控制
+      PORT: "4242"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4242/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

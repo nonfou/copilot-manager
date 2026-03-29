@@ -1,0 +1,34 @@
+# Git
+.git/
+.gitignore
+
+# Env (injected at runtime)
+.env
+
+# Docs
+README.md
+*.md
+
+# Frontend source (only dist is needed at runtime)
+frontend/node_modules/
+frontend/src/
+frontend/index.html
+frontend/vite.config.ts
+frontend/tsconfig*.json
+frontend/package*.json
+frontend/pnpm-lock.yaml
+
+# Go build artifacts
+*.exe
+/copilot-manager
+
+# Data (mounted as volume)
+data/
+
+# Logs
+*.log
+app.pid
+
+# Scripts
+start.sh
+stop.sh
