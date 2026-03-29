@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { h } from 'vue'
+import { h, computed } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
 import { NMenu, NButton, NDivider, NText } from 'naive-ui'
 import type { MenuOption } from 'naive-ui'
@@ -15,36 +15,36 @@ function renderLabel(label: string, to: string) {
 const menuOptions: MenuOption[] = [
   {
     label: renderLabel('仪表盘', '/ui/dashboard'),
-    key: 'dashboard',
+    key: '/dashboard',
     show: auth.user?.role === 'admin',
   },
   {
     label: renderLabel('账号管理', '/ui/accounts'),
-    key: 'accounts',
+    key: '/accounts',
     show: auth.user?.role === 'admin',
   },
   {
     label: renderLabel('Key 管理', '/ui/keys'),
-    key: 'keys',
+    key: '/keys',
     show: auth.user?.role === 'admin',
   },
   {
     label: renderLabel('Key 详情', '/ui/key-detail'),
-    key: 'key-detail',
+    key: '/key-detail',
   },
   {
     label: renderLabel('用户管理', '/ui/users'),
-    key: 'users',
+    key: '/users',
     show: auth.user?.role === 'admin',
   },
   {
     label: renderLabel('请求日志', '/ui/logs'),
-    key: 'logs',
+    key: '/logs',
     show: auth.user?.role === 'admin',
   },
 ]
 
-const activeKey = router.currentRoute.value.name as string
+const activeKey = computed(() => router.currentRoute.value.path)
 
 async function handleLogout() {
   await auth.logout()
@@ -64,6 +64,7 @@ async function handleLogout() {
       :value="activeKey"
       :indent="16"
       style="flex: 1;"
+      @update:value="(key: string) => router.push(key)"
     />
 
     <div class="sidebar-footer">
