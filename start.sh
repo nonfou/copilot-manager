@@ -37,7 +37,7 @@ PORT="${_PORT:-${PORT:-4242}}"
 
 # ─── 构建 ─────────────────────────────────────────────────────────────────────
 echo "[info] 构建 Go 后端..."
-go build -ldflags="-s -w" -o "$BINARY" ./backend/cmd/server/
+(cd backend && go build -ldflags="-s -w" -o "../$APP_NAME" ./cmd/server/)
 echo "[info] 构建完成"
 
 # ─── 启动（优先 PM2，否则 nohup）─────────────────────────────────────────────
