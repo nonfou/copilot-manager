@@ -1,18 +1,8 @@
-# Dependencies
-node_modules/
-
-# Build output
-dist/
-
 # Data (user data, should not be committed)
 data/
 
 # Environment variables (contains secrets)
 .env
-
-# Bun
-.bun-cache/
-bun.lockb
 
 # IDE
 .idea/
@@ -31,4 +21,5 @@ logs/
 # Go build output
 *.exe
 *.exe~
+/copilot-manager
 target/

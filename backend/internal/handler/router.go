@@ -116,27 +116,27 @@ func NewRouter(rateLimitPerMin int) http.Handler {
 	return r
 }
 
-// resolvePublicDir returns the path to the public directory.
-// Tries ./public relative to the working directory.
+// resolvePublicDir returns the path to the frontend directory.
+// Tries ./frontend relative to the working directory.
 func resolvePublicDir() string {
 	// When running from project root
-	if info, err := os.Stat("public"); err == nil && info.IsDir() {
-		return "public"
+	if info, err := os.Stat("frontend"); err == nil && info.IsDir() {
+		return "frontend"
 	}
 	// When running from backend/
-	if info, err := os.Stat("../public"); err == nil && info.IsDir() {
-		return "../public"
+	if info, err := os.Stat("../frontend"); err == nil && info.IsDir() {
+		return "../frontend"
 	}
 	// Absolute path fallback
 	exe, err := os.Executable()
 	if err == nil {
 		dir := filepath.Dir(exe)
-		candidate := filepath.Join(dir, "public")
+		candidate := filepath.Join(dir, "frontend")
 		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
 			return candidate
 		}
 	}
-	return "public"
+	return "frontend"
 }
 
 // resolveDataDir returns the path to the data directory.

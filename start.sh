@@ -2,6 +2,7 @@
 set -e
 
 APP_NAME="copilot-manager"
+BINARY="./$APP_NAME"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 cd "$SCRIPT_DIR"
@@ -32,22 +33,20 @@ if [ -z "$_PORT" ] && [ -z "${PORT+x}" ]; then
   _ENV_PORT="$(grep -E '^PORT=' .env | head -1 | cut -d= -f2- | tr -d '[:space:]')"
   [ -n "$_ENV_PORT" ] && PORT="$_ENV_PORT"
 fi
-PORT="${PORT:-4242}"
+PORT="${_PORT:-${PORT:-4242}}"
 
-# ─── 安装依赖 & 构建 ─────────────────────────────────────────────────────────
-echo "[info] 安装依赖..."
-bun install --frozen-lockfile
-
-echo "[info] 构建..."
-bun run build
+# ─── 构建 ─────────────────────────────────────────────────────────────────────
+echo "[info] 构建 Go 后端..."
+go build -ldflags="-s -w" -o "$BINARY" ./backend/cmd/server/
+echo "[info] 构建完成"
 
 # ─── 启动（优先 PM2，否则 nohup）─────────────────────────────────────────────
 if command -v pm2 &>/dev/null; then
   if pm2 list | grep -q "$APP_NAME"; then
     echo "[info] 检测到已有进程，执行 restart（端口 $PORT）..."
-    pm2 restart "$APP_NAME" --update-env -- start --port "$PORT"
+    PORT="$PORT" pm2 restart "$APP_NAME" --update-env
   else
-    pm2 start dist/main.js --name "$APP_NAME" -- start --port "$PORT"
+    PORT="$PORT" pm2 start "$BINARY" --name "$APP_NAME"
     pm2 save
   fi
   echo ""
@@ -56,7 +55,7 @@ if command -v pm2 &>/dev/null; then
   echo "[ok] 已通过 PM2 启动（端口 $PORT）：pm2 logs $APP_NAME"
 else
   # 无 PM2 则用 nohup 后台运行，日志写入 app.log
-  nohup bun run dist/main.js start --port "$PORT" > app.log 2>&1 &
+  PORT="$PORT" nohup "$BINARY" > app.log 2>&1 &
   echo $! > app.pid
   echo "[ok] 已在后台启动（端口 $PORT），PID=$(cat app.pid)，日志：tail -f app.log"
 fi
