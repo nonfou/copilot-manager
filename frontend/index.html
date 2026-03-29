@@ -1,120 +1,12 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>仪表盘 - Copilot Manager</title>
-  <link rel="stylesheet" href="style.css">
-</head>
-<body>
-<div class="layout">
-  <!-- 侧边栏 -->
-  <nav class="sidebar" id="sidebar"></nav>
-
-  <!-- 主内容 -->
-  <main class="main">
-    <div class="page-header">
-      <h2>仪表盘</h2>
-      <p>系统整体运行状态概览</p>
-    </div>
-
-    <!-- 统计卡片 -->
-    <div class="stats-grid">
-      <div class="card stat-card running">
-        <div class="stat-label">账号总数</div>
-        <div class="stat-value" id="stat-total">-</div>
-        <div class="stat-sub">Copilot 账号</div>
-      </div>
-      <div class="card stat-card keys">
-        <div class="stat-label">启用的 Key</div>
-        <div class="stat-value" id="stat-keys">-</div>
-        <div class="stat-sub">API Keys</div>
-      </div>
-      <div class="card stat-card today">
-        <div class="stat-label">今日请求</div>
-        <div class="stat-value" id="stat-today">-</div>
-        <div class="stat-sub">次</div>
-      </div>
-      <div class="card stat-card total">
-        <div class="stat-label">历史总请求</div>
-        <div class="stat-value" id="stat-requests">-</div>
-        <div class="stat-sub">（最近 5000 条）</div>
-      </div>
-    </div>
-
-    <!-- 最近请求 -->
-    <div class="card">
-      <div class="table-header">
-        <span class="table-title">最近请求</span>
-        <button class="btn btn-secondary btn-sm" onclick="loadData()">刷新</button>
-      </div>
-      <table>
-        <thead>
-          <tr>
-            <th>时间</th>
-            <th>账号</th>
-            <th>Key</th>
-            <th>方法</th>
-            <th>模型</th>
-            <th>路径</th>
-            <th>状态码</th>
-            <th>耗时</th>
-          </tr>
-        </thead>
-        <tbody id="recent-logs">
-          <tr><td colspan="8" class="table-empty">加载中...</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </main>
-</div>
-
-<script src="app.js"></script>
-<script>
-async function loadData() {
-  try {
-    const [stats, logsRes] = await Promise.all([
-      api.get('/stats'),
-      api.get('/logs?limit=20'),
-    ])
-
-    document.getElementById('stat-total').textContent = stats.total_accounts
-    document.getElementById('stat-keys').textContent = stats.enabled_keys
-    document.getElementById('stat-today').textContent = stats.today_requests
-    document.getElementById('stat-requests').textContent = stats.total_requests
-
-    const tbody = document.getElementById('recent-logs')
-    if (!logsRes.logs.length) {
-      tbody.innerHTML = '<tr><td colspan="8" class="table-empty">暂无请求记录</td></tr>'
-      return
-    }
-    tbody.innerHTML = logsRes.logs.map(log => `
-      <tr>
-        <td class="text-muted">${formatDate(log.created_at)}</td>
-        <td>${escHtml(log.account_name)}</td>
-        <td class="text-muted">${escHtml(log.api_key_name)}</td>
-        <td><code>${escHtml(log.method)}</code></td>
-        <td class="text-muted">${escHtml(log.model ?? '-')}</td>
-        <td class="monospace">${escHtml(log.path)}</td>
-        <td>${statusCodeBadge(log.status_code)}</td>
-        <td class="text-muted">${formatDuration(log.duration_ms)}</td>
-      </tr>
-    `).join('')
-  } catch (err) {
-    toast(err.message, 'error')
-  }
-}
-
-// 初始化
-async function init() {
-  await Promise.all([checkAuth(), loadSidebar('/ui/')])
-  requireAdmin()
-  await loadData()
-  // 每 15s 自动刷新
-  setInterval(loadData, 15_000)
-}
-
-init()
-</script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Copilot Manager</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
 </html>

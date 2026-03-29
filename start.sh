@@ -41,6 +41,11 @@ if [ -z "$_PORT" ] && [ -z "${PORT+x}" ]; then
 fi
 PORT="${_PORT:-${PORT:-4242}}"
 
+# ─── 构建前端 ─────────────────────────────────────────────────────────────────
+echo "[info] 构建前端..."
+(cd frontend && npm install --prefer-offline && npm run build)
+echo "[info] 前端构建完成"
+
 # ─── 构建 ─────────────────────────────────────────────────────────────────────
 echo "[info] 构建 Go 后端..."
 (cd backend && go build -ldflags="-s -w" -o "../$APP_NAME" ./cmd/server/)

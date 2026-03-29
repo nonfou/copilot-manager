@@ -98,7 +98,7 @@ func NewRouter(rateLimitPerMin int) http.Handler {
 		})
 	})
 
-	// Static UI files
+	// Static UI files (SPA)
 	publicDir := resolvePublicDir()
 	r.Get("/ui", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/ui/", http.StatusFound)
@@ -106,7 +106,7 @@ func NewRouter(rateLimitPerMin int) http.Handler {
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/ui/", http.StatusFound)
 	})
-	r.Handle("/ui/*", http.StripPrefix("/ui", http.FileServer(http.Dir(publicDir))))
+	r.Handle("/ui/*", http.StripPrefix("/ui", spaHandler(publicDir)))
 
 	// Proxy route (no auth middleware - handled inside proxy)
 	proxy := NewProxyHandler(rateLimitPerMin)
@@ -116,27 +116,40 @@ func NewRouter(rateLimitPerMin int) http.Handler {
 	return r
 }
 
-// resolvePublicDir returns the path to the frontend directory.
-// Tries ./frontend relative to the working directory.
+// resolvePublicDir returns the path to the frontend dist directory.
+// Prefers frontend/dist (Vite build output), falls back to frontend/.
 func resolvePublicDir() string {
-	// When running from project root
-	if info, err := os.Stat("frontend"); err == nil && info.IsDir() {
-		return "frontend"
+	candidates := []string{
+		"frontend/dist",
+		"frontend",
+		"../frontend/dist",
+		"../frontend",
 	}
-	// When running from backend/
-	if info, err := os.Stat("../frontend"); err == nil && info.IsDir() {
-		return "../frontend"
-	}
-	// Absolute path fallback
-	exe, err := os.Executable()
-	if err == nil {
-		dir := filepath.Dir(exe)
-		candidate := filepath.Join(dir, "frontend")
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			return candidate
+	for _, c := range candidates {
+		if _, err := os.Stat(filepath.Join(c, "index.html")); err == nil {
+			return c
 		}
 	}
-	return "frontend"
+	return "frontend/dist"
+}
+
+// spaHandler serves static files from publicDir.
+// If the requested file does not exist, it falls back to index.html
+// so that the Vue Router history mode works on direct URL access.
+func spaHandler(publicDir string) http.Handler {
+	fs := http.Dir(publicDir)
+	fileServer := http.FileServer(fs)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f, err := fs.Open(r.URL.Path)
+		if err == nil {
+			f.Close()
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+		// SPA fallback: serve index.html
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		http.ServeFile(w, r, filepath.Join(publicDir, "index.html"))
+	})
 }
 
 // resolveDataDir returns the path to the data directory.
