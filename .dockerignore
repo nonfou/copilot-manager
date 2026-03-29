@@ -9,14 +9,9 @@
 README.md
 *.md
 
-# Frontend source (only dist is needed at runtime)
+# Frontend: 仅排除构建产物和依赖，源码必须保留给 Docker 构建阶段
 frontend/node_modules/
-frontend/src/
-frontend/index.html
-frontend/vite.config.ts
-frontend/tsconfig*.json
-frontend/package*.json
-frontend/pnpm-lock.yaml
+frontend/dist/
 
 # Go build artifacts
 *.exe
