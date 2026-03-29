@@ -43,7 +43,7 @@ PORT="${_PORT:-${PORT:-4242}}"
 
 # ─── 构建前端 ─────────────────────────────────────────────────────────────────
 echo "[info] 构建前端..."
-(cd frontend && npm install --prefer-offline && npm run build)
+(cd frontend && pnpm install && pnpm run build)
 echo "[info] 前端构建完成"
 
 # ─── 构建 ─────────────────────────────────────────────────────────────────────
