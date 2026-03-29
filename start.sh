@@ -28,6 +28,12 @@ if [ ! -f ".env" ]; then
   exit 1
 fi
 
+# ─── 加载 .env 变量 ──────────────────────────────────────────────────────────
+set -a
+# shellcheck source=.env
+source .env
+set +a
+
 # 从 .env 中读取 PORT（仅当命令行和 shell 环境均未指定时生效）
 if [ -z "$_PORT" ] && [ -z "${PORT+x}" ]; then
   _ENV_PORT="$(grep -E '^PORT=' .env | head -1 | cut -d= -f2- | tr -d '[:space:]')"
