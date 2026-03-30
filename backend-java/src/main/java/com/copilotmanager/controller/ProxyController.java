@@ -31,7 +31,8 @@ public class ProxyController {
     private static final Logger log = LoggerFactory.getLogger(ProxyController.class);
     private static final long MAX_BODY_SIZE = 100L * 1024 * 1024; // 100MB
     private static final Set<String> SKIP_HEADERS = Set.of(
-            "authorization", "host", "content-length", "content-encoding", "transfer-encoding"
+            "authorization", "host", "content-length", "content-encoding", "transfer-encoding",
+            "connection", "upgrade", "proxy-connection", "keep-alive", "te", "trailer"
     );
 
     private final KeyCacheService keyCacheService;
