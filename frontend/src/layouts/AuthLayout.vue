@@ -13,7 +13,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #0f0f0f;
+  background: radial-gradient(ellipse at 50% 30%, #1a1535 0%, #0a0a14 60%, #0f0f0f 100%);
   padding: 24px;
 }
 </style>

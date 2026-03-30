@@ -53,11 +53,11 @@ async function handleLogin() {
 <template>
   <div class="login-card-wrap">
     <NSpin :show="checkingStatus">
-      <NCard style="width: 400px;" :bordered="false">
+      <NCard class="login-card" :bordered="false">
         <template #header>
-          <div style="text-align: center; padding: 8px 0;">
-            <div style="font-size: 32px; margin-bottom: 8px;">🤖</div>
-            <div style="font-size: 20px; font-weight: 600; color: #e8e8e8;">Copilot Manager</div>
+          <div class="login-header">
+            <div class="login-logo">🤖</div>
+            <div class="login-title">Copilot Manager</div>
           </div>
         </template>
 
@@ -65,7 +65,7 @@ async function handleLogin() {
           v-if="!initialized"
           type="warning"
           title="系统未初始化"
-          style="margin-bottom: 16px;"
+          class="login-alert"
         >
           管理员账号需通过命令行创建，请联系系统管理员
         </NAlert>
@@ -74,7 +74,7 @@ async function handleLogin() {
           v-if="error"
           type="error"
           :title="error"
-          style="margin-bottom: 16px;"
+          class="login-alert"
           closable
           @close="error = ''"
         />
@@ -111,8 +111,8 @@ async function handleLogin() {
           </NButton>
         </NForm>
 
-        <div style="text-align: center; margin-top: 16px;">
-          <NText depth="3" style="font-size: 12px;">Copilot Manager v1.0</NText>
+        <div class="login-footer">
+          <NText depth="3" class="login-version">Copilot Manager v1.0</NText>
         </div>
       </NCard>
     </NSpin>
@@ -122,6 +122,53 @@ async function handleLogin() {
 <style scoped>
 .login-card-wrap {
   width: 100%;
-  max-width: 440px;
+  max-width: 420px;
+}
+
+.login-card {
+  border-radius: 16px !important;
+  background: #1a1a2e !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(108, 99, 255, 0.15) !important;
+}
+
+.login-header {
+  text-align: center;
+  padding: 12px 0 4px;
+}
+
+.login-logo {
+  font-size: 36px;
+  margin-bottom: 10px;
+  line-height: 1;
+}
+
+.login-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #e8e8e8;
+  letter-spacing: 0.5px;
+}
+
+.login-alert {
+  margin-bottom: 16px;
+}
+
+.login-footer {
+  text-align: center;
+  margin-top: 20px;
+}
+
+.login-version {
+  font-size: 12px;
+}
+
+/* 覆盖浏览器自动填充背景色 */
+:deep(input:-webkit-autofill),
+:deep(input:-webkit-autofill:hover),
+:deep(input:-webkit-autofill:focus) {
+  -webkit-box-shadow: 0 0 0 1000px #2a2a42 inset !important;
+  -webkit-text-fill-color: #e8e8e8 !important;
+  caret-color: #e8e8e8;
+  transition: background-color 5000s ease-in-out 0s;
 }
 </style>
