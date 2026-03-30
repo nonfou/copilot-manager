@@ -21,8 +21,7 @@ func AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sessionID := getSessionID(r)
 		if sessionID == "" {
-			http.Error(w, `{"error":"Unauthorized"}`, http.StatusUnauthorized)
-			w.Header().Set("Content-Type", "application/json")
+			writeUnauthorized(w)
 			return
 		}
 

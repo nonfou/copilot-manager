@@ -20,7 +20,6 @@ import (
 )
 
 const (
-	usageCacheTTL = 5 * time.Minute
 	githubClientID = "Iv1.b507a08c87ecfe98" // GitHub Copilot official client_id
 )
 
@@ -32,7 +31,7 @@ type cacheEntry struct {
 }
 
 var (
-	usageCacheMu sync.RWMutex
+	usageCacheMu  sync.RWMutex
 	usageCacheMap = make(map[string]cacheEntry)
 
 	modelsCacheMu  sync.RWMutex
@@ -43,7 +42,7 @@ func getUsageCache(id string) (interface{}, bool) {
 	usageCacheMu.RLock()
 	defer usageCacheMu.RUnlock()
 	e, ok := usageCacheMap[id]
-	if !ok || time.Since(e.fetchedAt) >= usageCacheTTL {
+	if !ok || time.Since(e.fetchedAt) >= metadataCacheTTL {
 		return nil, false
 	}
 	return e.data, true
@@ -52,6 +51,7 @@ func getUsageCache(id string) (interface{}, bool) {
 func setUsageCache(id string, data interface{}) {
 	usageCacheMu.Lock()
 	defer usageCacheMu.Unlock()
+	pruneOldestCacheEntry(usageCacheMap, id)
 	usageCacheMap[id] = cacheEntry{data: data, fetchedAt: time.Now()}
 }
 
@@ -65,7 +65,7 @@ func getModelsCache(id string) (interface{}, bool) {
 	modelsCacheMu.RLock()
 	defer modelsCacheMu.RUnlock()
 	e, ok := modelsCacheMap[id]
-	if !ok || time.Since(e.fetchedAt) >= usageCacheTTL {
+	if !ok || time.Since(e.fetchedAt) >= metadataCacheTTL {
 		return nil, false
 	}
 	return e.data, true
@@ -81,6 +81,7 @@ func getModelsCacheStale(id string) (interface{}, bool) {
 func setModelsCache(id string, data interface{}) {
 	modelsCacheMu.Lock()
 	defer modelsCacheMu.Unlock()
+	pruneOldestCacheEntry(modelsCacheMap, id)
 	modelsCacheMap[id] = cacheEntry{data: data, fetchedAt: time.Now()}
 }
 
@@ -88,6 +89,24 @@ func deleteModelsCache(id string) {
 	modelsCacheMu.Lock()
 	defer modelsCacheMu.Unlock()
 	delete(modelsCacheMap, id)
+}
+
+func pruneOldestCacheEntry(m map[string]cacheEntry, incomingID string) {
+	if _, exists := m[incomingID]; exists || len(m) < metadataCacheLimit {
+		return
+	}
+
+	var oldestKey string
+	var oldestTime time.Time
+	for key, entry := range m {
+		if oldestKey == "" || entry.fetchedAt.Before(oldestTime) {
+			oldestKey = key
+			oldestTime = entry.fetchedAt
+		}
+	}
+	if oldestKey != "" {
+		delete(m, oldestKey)
+	}
 }
 
 // ─── Token masking ────────────────────────────────────────────────────────
@@ -310,8 +329,7 @@ func handleGetAccountUsage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Get(account.APIURL + "/usage")
+	resp, err := shortHTTPClient.Get(account.APIURL + "/usage")
 	if err != nil {
 		log.Printf("WARN: Usage fetch failed for account %s: %v", id, err)
 		writeError(w, http.StatusBadGateway, fmt.Sprintf("Failed to fetch usage: %v", err))
@@ -363,8 +381,7 @@ func handleGetAccountModels(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Get(account.APIURL + "/v1/models")
+	resp, err := shortHTTPClient.Get(account.APIURL + "/v1/models")
 	if err != nil {
 		log.Printf("WARN: Models fetch failed for account %s: %v", id, err)
 		if stale, ok := getModelsCacheStale(id); ok {
@@ -428,8 +445,7 @@ func handleAuthStart(w http.ResponseWriter, r *http.Request) {
 	ghReq.Header.Set("Content-Type", "application/json")
 	ghReq.Header.Set("Accept", "application/json")
 
-	ghClient := &http.Client{Timeout: 10 * time.Second}
-	ghResp, err := ghClient.Do(ghReq)
+	ghResp, err := shortHTTPClient.Do(ghReq)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -521,8 +537,7 @@ func handleAuthPoll(w http.ResponseWriter, r *http.Request) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := shortHTTPClient.Do(req)
 	if err != nil {
 		writeJSON(w, http.StatusOK, M{"status": "error", "error": err.Error()})
 		return

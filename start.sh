@@ -2,7 +2,7 @@
 set -e
 
 APP_NAME="copilot-manager"
-JAR="backend-java/target/copilot-manager.jar"
+BINARY="backend/bin/copilot-manager"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 cd "$SCRIPT_DIR"
@@ -46,14 +46,22 @@ echo "[info] 构建前端..."
 (cd frontend && pnpm install && pnpm run build)
 echo "[info] 前端构建完成"
 
-# ─── 构建 Java 后端 ───────────────────────────────────────────────────────────
-echo "[info] 构建 Java 后端..."
-(cd backend-java && mvn clean package -DskipTests -q)
-echo "[info] 构建完成：$JAR"
+# ─── 构建 Go 后端 ─────────────────────────────────────────────────────────────
+echo "[info] 构建 Go 后端..."
+mkdir -p backend/bin
+(cd backend && go build -trimpath -ldflags="-s -w" -o "bin/copilot-manager" ./cmd/server)
+echo "[info] 构建完成：$BINARY"
 
 # ─── 启动命令 ─────────────────────────────────────────────────────────────────
-JAVA_OPTS="${JAVA_OPTS:--Xmx512m -Xms128m}"
-START_CMD="java $JAVA_OPTS -jar $JAR --server.port=$PORT"
+export PORT
+export DATA_DIR="${DATA_DIR:-data}"
+export NODE_ENV="${NODE_ENV:-production}"
+export GOMEMLIMIT="${GOMEMLIMIT:-320MiB}"
+export GOGC="${GOGC:-50}"
+export MAX_PROXY_BODY_SIZE="${MAX_PROXY_BODY_SIZE:-16MiB}"
+export LOG_RETENTION_COUNT="${LOG_RETENTION_COUNT:-2000}"
+export CACHE_TTL_SECONDS="${CACHE_TTL_SECONDS:-120}"
+START_CMD="$BINARY"
 
 # ─── 启动（优先 PM2，否则 nohup）─────────────────────────────────────────────
 if command -v pm2 &>/dev/null; then
@@ -70,7 +78,7 @@ if command -v pm2 &>/dev/null; then
   echo "[ok] 已通过 PM2 启动（端口 $PORT）：pm2 logs $APP_NAME"
 else
   # 无 PM2 则用 nohup 后台运行，日志写入 app.log
-  PORT="$PORT" nohup $START_CMD > app.log 2>&1 &
+  nohup "$BINARY" > app.log 2>&1 &
   echo $! > app.pid
   echo "[ok] 已在后台启动（端口 $PORT），PID=$(cat app.pid)，日志：tail -f app.log"
 fi

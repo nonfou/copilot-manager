@@ -21,6 +21,8 @@
 
 每个账号对应一个独立运行的 `copilot-api` 实例，copilot-manager 不管理子进程，只做请求转发。
 
+当前后端为 **Go 轻量版**，用于降低 2G 小内存服务器上的常驻占用。
+
 ---
 
 ## 前置条件
@@ -45,8 +47,7 @@ curl http://localhost:8080/v1/models
 
 ### 前置依赖
 
-- **Java 21+**
-- **Maven 3.9+**
+- **Go 1.25+**
 - **Node.js 18+ + pnpm**（用于构建前端）
 
 ### 1. 克隆仓库
@@ -85,8 +86,8 @@ openssl rand -hex 32
 # 构建前端
 cd frontend && pnpm install && pnpm run build && cd ..
 
-# 构建 Java 后端
-cd backend-java && mvn clean package -DskipTests && cd ..
+# 构建 Go 后端
+cd backend && go build -trimpath -ldflags="-s -w" -o bin/copilot-manager ./cmd/server && cd ..
 ```
 
 ### 4. 启动
@@ -94,7 +95,7 @@ cd backend-java && mvn clean package -DskipTests && cd ..
 ```bash
 # 直接运行（自动读取当前目录的 .env）
 source .env
-java -jar backend-java/target/copilot-manager.jar
+DATA_DIR=data ./backend/bin/copilot-manager
 
 # 或使用启动脚本（自动构建 + PM2/nohup 后台运行）
 ./start.sh
@@ -105,8 +106,8 @@ java -jar backend-java/target/copilot-manager.jar
 ### 开发模式
 
 ```bash
-# 后端（热重载，需要 spring-boot-devtools）
-cd backend-java && mvn spring-boot:run
+# 后端
+cd backend && go run ./cmd/server
 
 # 前端（Vite 开发服务器，代理 /api /v1 → localhost:4242）
 cd frontend && pnpm run dev
@@ -131,6 +132,7 @@ docker compose logs -f
 - 数据目录挂载到 `./data`（持久化数据库文件）
 - 环境变量从 `.env` 文件读取
 - 默认监听端口 `4242`，可在 `.env` 中通过 `PORT` 修改
+- 默认附带轻量内存设置：`GOMEMLIMIT=320MiB`、`GOGC=50`
 
 ---
 
@@ -224,7 +226,11 @@ curl http://localhost:4242/v1/chat/completions \
 | `CORS_ALLOWED_ORIGINS` | 逗号分隔的 CORS 白名单 | —（不设则允许所有） |
 | `HTTPS` | Cookie Secure 属性（部署在 HTTPS 反向代理后设为 `true`） | `false` |
 | `TRUSTED_PROXY` | 信任 X-Forwarded-For 头（仅在反向代理可信时启用） | `false` |
-| `JAVA_OPTS` | JVM 启动参数 | `-Xmx512m -Xms128m` |
+| `MAX_PROXY_BODY_SIZE` | 非流式代理请求体最大缓存，支持 `16MiB` 写法 | `16MiB` |
+| `LOG_RETENTION_COUNT` | 最多保留的请求日志条数 | `2000` |
+| `CACHE_TTL_SECONDS` | 账号 usage/models 缓存秒数 | `120` |
+| `GOMEMLIMIT` | Go 运行时软内存上限 | `320MiB` |
+| `GOGC` | Go GC 激进程度，越小越省内存 | `50` |
 
 ---
 
@@ -234,3 +240,4 @@ curl http://localhost:4242/v1/chat/completions \
 - Session 存储在内存中，服务重启后需要重新登录
 - 代理转发时会去掉客户端的 `Authorization` 头，由 copilot-api 实例负责鉴权
 - SQLite 使用 WAL 模式，`DATA_DIR` 目录需有写权限
+- 对于 2G 服务器，建议优先使用 Docker Compose 默认配置或保留 `GOMEMLIMIT=320MiB`

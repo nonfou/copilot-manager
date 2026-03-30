@@ -10,7 +10,11 @@ import (
 	"gorm.io/gorm"
 )
 
-const maxLogs = 5000
+const (
+	defaultLogRetentionCount = 2000
+	maxUserSessions          = 512
+	maxAuthSessions          = 128
+)
 
 // keyCacheEntry is used for timing-safe API key lookups in the hot path.
 type keyCacheEntry struct {
@@ -19,14 +23,20 @@ type keyCacheEntry struct {
 	enabled bool
 }
 
+// Options contains memory-sensitive store configuration.
+type Options struct {
+	LogRetentionCount int
+}
+
 // State holds all application state.
 type State struct {
-	mu           sync.RWMutex
-	db           *gorm.DB
-	authSessions map[string]AuthSession
-	sessions     map[string]UserSession
-	keyCache     []keyCacheEntry
-	logCount     atomic.Int64
+	mu                sync.RWMutex
+	db                *gorm.DB
+	authSessions      map[string]AuthSession
+	sessions          map[string]UserSession
+	keyCache          []keyCacheEntry
+	logCount          atomic.Int64
+	logRetentionCount int
 }
 
 var (
@@ -38,11 +48,15 @@ var (
 
 // Init initializes the store with the given data directory.
 // Must be called before any other store functions.
-func Init(dir string) {
+func Init(dir string, opts Options) {
 	dataDir = dir
+	if opts.LogRetentionCount <= 0 {
+		opts.LogRetentionCount = defaultLogRetentionCount
+	}
 	globalState = &State{
-		authSessions: make(map[string]AuthSession),
-		sessions:     make(map[string]UserSession),
+		authSessions:      make(map[string]AuthSession),
+		sessions:          make(map[string]UserSession),
+		logRetentionCount: opts.LogRetentionCount,
 	}
 }
 
@@ -331,7 +345,7 @@ func GetLogs(page, limit int, accountID, apiKeyID string) LogsResult {
 
 	var logs []RequestLog
 	applyFilters(s.db.Model(&RequestLog{})).
-		Order("created_at DESC").Limit(limit).Offset((page-1)*limit).Find(&logs)
+		Order("created_at DESC").Limit(limit).Offset((page - 1) * limit).Find(&logs)
 	if logs == nil {
 		logs = []RequestLog{}
 	}
@@ -346,9 +360,13 @@ func AppendLog(l RequestLog) {
 	}
 	// Trim every 50 inserts: keep newest maxLogs rows.
 	if s.logCount.Add(1)%50 == 0 {
+		retention := s.logRetentionCount
+		if retention <= 0 {
+			retention = defaultLogRetentionCount
+		}
 		s.db.Exec(
 			`DELETE FROM request_logs WHERE rowid NOT IN (SELECT rowid FROM request_logs ORDER BY created_at DESC LIMIT ?)`,
-			maxLogs,
+			retention,
 		)
 	}
 }
@@ -398,17 +416,32 @@ func SetAuthSession(session AuthSession) {
 	s := globalState
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	pruneExpiredAuthSessionsLocked(s, time.Now())
+	if len(s.authSessions) >= maxAuthSessions {
+		evictOldestAuthSessionLocked(s)
+	}
 	s.authSessions[session.AuthID] = session
 }
 
 func GetAuthSession(authID string) *AuthSession {
 	s := globalState
+	now := time.Now()
 	s.mu.RLock()
-	defer s.mu.RUnlock()
 	if session, ok := s.authSessions[authID]; ok {
+		if authSessionExpired(session, now) {
+			s.mu.RUnlock()
+			s.mu.Lock()
+			if current, ok := s.authSessions[authID]; ok && authSessionExpired(current, now) {
+				delete(s.authSessions, authID)
+			}
+			s.mu.Unlock()
+			return nil
+		}
 		cp := session
+		s.mu.RUnlock()
 		return &cp
 	}
+	s.mu.RUnlock()
 	return nil
 }
 
@@ -496,17 +529,32 @@ func SetSession(session UserSession) {
 	s := globalState
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	pruneExpiredSessionsLocked(s, time.Now())
+	if len(s.sessions) >= maxUserSessions {
+		evictOldestSessionLocked(s)
+	}
 	s.sessions[session.SessionID] = session
 }
 
 func GetSession(sessionID string) *UserSession {
 	s := globalState
+	now := time.Now()
 	s.mu.RLock()
-	defer s.mu.RUnlock()
 	if session, ok := s.sessions[sessionID]; ok {
+		if userSessionExpired(session, now) {
+			s.mu.RUnlock()
+			s.mu.Lock()
+			if current, ok := s.sessions[sessionID]; ok && userSessionExpired(current, now) {
+				delete(s.sessions, sessionID)
+			}
+			s.mu.Unlock()
+			return nil
+		}
 		cp := session
+		s.mu.RUnlock()
 		return &cp
 	}
+	s.mu.RUnlock()
 	return nil
 }
 
@@ -519,14 +567,11 @@ func DeleteSession(sessionID string) {
 
 // ─── System Config ────────────────────────────────────────────────────────────
 
-// GetSystemConfig returns the system config, or nil if not yet initialized.
+// GetSystemConfig returns the system config row, or nil when it cannot be loaded.
 func GetSystemConfig() *SystemConfig {
 	s := globalState
 	var config SystemConfig
 	if err := s.db.First(&config, 1).Error; err != nil {
-		return nil
-	}
-	if !config.Initialized {
 		return nil
 	}
 	return &config
@@ -550,4 +595,68 @@ func UpdateSystemConfig(initialized bool, adminCreatedAt string) {
 		config.AdminCreatedAt = adminCreatedAt
 	}
 	SetSystemConfig(*config)
+}
+
+func pruneExpiredSessionsLocked(s *State, now time.Time) {
+	for id, session := range s.sessions {
+		if userSessionExpired(session, now) {
+			delete(s.sessions, id)
+		}
+	}
+}
+
+func pruneExpiredAuthSessionsLocked(s *State, now time.Time) {
+	for id, session := range s.authSessions {
+		if authSessionExpired(session, now) {
+			delete(s.authSessions, id)
+		}
+	}
+}
+
+func userSessionExpired(session UserSession, now time.Time) bool {
+	expiresAt, err := time.Parse(time.RFC3339, session.ExpiresAt)
+	return err != nil || !expiresAt.After(now)
+}
+
+func authSessionExpired(session AuthSession, now time.Time) bool {
+	expiresAt, err := time.Parse(time.RFC3339, session.ExpiresAt)
+	return err != nil || !expiresAt.After(now)
+}
+
+func evictOldestSessionLocked(s *State) {
+	var oldestID string
+	var oldestTime time.Time
+	for id, session := range s.sessions {
+		expiresAt, err := time.Parse(time.RFC3339, session.ExpiresAt)
+		if err != nil {
+			delete(s.sessions, id)
+			return
+		}
+		if oldestID == "" || expiresAt.Before(oldestTime) {
+			oldestID = id
+			oldestTime = expiresAt
+		}
+	}
+	if oldestID != "" {
+		delete(s.sessions, oldestID)
+	}
+}
+
+func evictOldestAuthSessionLocked(s *State) {
+	var oldestID string
+	var oldestTime time.Time
+	for id, session := range s.authSessions {
+		expiresAt, err := time.Parse(time.RFC3339, session.ExpiresAt)
+		if err != nil {
+			delete(s.authSessions, id)
+			return
+		}
+		if oldestID == "" || expiresAt.Before(oldestTime) {
+			oldestID = id
+			oldestTime = expiresAt
+		}
+	}
+	if oldestID != "" {
+		delete(s.authSessions, oldestID)
+	}
 }

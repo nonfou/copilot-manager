@@ -3,8 +3,10 @@ package handler
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"net"
 	"net/http"
 	"strconv"
+	"strings"
 )
 
 // generateSessionID generates a 32-byte random hex session ID (matches TS: randomBytes(16).toString("hex"))
@@ -22,26 +24,19 @@ func getClientIP(r *http.Request, trustedProxy bool) string {
 	if trustedProxy {
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 			// Take first IP
-			for i, c := range xff {
-				if c == ',' {
-					return xff[:i]
-				}
-			}
-			return xff
+			parts := strings.Split(xff, ",")
+			return strings.TrimSpace(parts[0])
 		}
 		if xri := r.Header.Get("X-Real-IP"); xri != "" {
 			return xri
 		}
 	}
 	// Use RemoteAddr
-	addr := r.RemoteAddr
-	// Strip port
-	for i := len(addr) - 1; i >= 0; i-- {
-		if addr[i] == ':' {
-			return addr[:i]
-		}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil && host != "" {
+		return host
 	}
-	return addr
+	return r.RemoteAddr
 }
 
 // itoa converts an int to string.

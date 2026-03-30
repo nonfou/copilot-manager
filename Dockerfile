@@ -11,31 +11,40 @@ RUN pnpm install --frozen-lockfile
 COPY frontend/ ./
 RUN pnpm run build
 
-# ─── Stage 2: Build Java Backend ──────────────────────────────────────────────
-FROM maven:3.9-eclipse-temurin-21-alpine AS java-builder
+# ─── Stage 2: Build Go Backend ────────────────────────────────────────────────
+FROM golang:1.25-alpine AS backend-builder
 
-WORKDIR /app/backend-java
+WORKDIR /app/backend
 
-COPY backend-java/pom.xml ./
-RUN mvn dependency:go-offline -q
+RUN apk add --no-cache build-base
 
-COPY backend-java/src ./src
-RUN mvn clean package -DskipTests -q
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download
+
+COPY backend/ ./
+RUN CGO_ENABLED=1 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/copilot-manager ./cmd/server
 
 # ─── Stage 3: Runtime ─────────────────────────────────────────────────────────
-FROM eclipse-temurin:21-jre-alpine
+FROM alpine:3.21
 
 WORKDIR /app
 
 RUN apk add --no-cache ca-certificates tzdata
 
-COPY --from=java-builder /app/backend-java/target/copilot-manager.jar ./
+COPY --from=backend-builder /out/copilot-manager ./copilot-manager
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist/
 
 VOLUME ["/app/data"]
 
 EXPOSE 4242
 
-ENV JAVA_OPTS="-Xmx512m -Xms128m"
+ENV PORT=4242 \
+    DATA_DIR=/app/data \
+    NODE_ENV=production \
+    GOMEMLIMIT=320MiB \
+    GOGC=50 \
+    MAX_PROXY_BODY_SIZE=16MiB \
+    LOG_RETENTION_COUNT=2000 \
+    CACHE_TTL_SECONDS=120
 
-CMD ["sh", "-c", "java $JAVA_OPTS -jar copilot-manager.jar"]
+CMD ["./copilot-manager"]

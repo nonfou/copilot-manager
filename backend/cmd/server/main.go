@@ -27,7 +27,9 @@ func main() {
 	log.Printf("INFO: 数据目录: %s", dataDir)
 
 	// Initialize and load store
-	store.Init(dataDir)
+	store.Init(dataDir, store.Options{
+		LogRetentionCount: cfg.LogRetentionCount,
+	})
 	store.LoadStore()
 	log.Println("INFO: 数据加载完成")
 
@@ -39,6 +41,10 @@ func main() {
 		TrustedProxy: cfg.TrustedProxy,
 		NodeEnv:      cfg.NodeEnv,
 		HTTPS:        cfg.HTTPS,
+	})
+	handler.SetRuntimeOptions(handler.RuntimeOptions{
+		MetadataCacheTTL: time.Duration(cfg.CacheTTLSeconds) * time.Second,
+		MaxProxyBodySize: cfg.MaxProxyBodySizeBytes,
 	})
 
 	// Build router

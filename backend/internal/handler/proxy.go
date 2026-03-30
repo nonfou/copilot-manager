@@ -15,8 +15,6 @@ import (
 	"copilot-manager/internal/store"
 )
 
-const maxBodySize = 100 * 1024 * 1024 // 100MB
-
 // usageInfo holds token usage extracted from the upstream response.
 // Supports both Anthropic format (input_tokens/output_tokens) and OpenAI format (prompt_tokens/completion_tokens).
 type usageInfo struct {
@@ -85,7 +83,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check Content-Length
-	if r.ContentLength > maxBodySize {
+	if r.ContentLength > maxProxyBodySize {
 		writeError(w, http.StatusRequestEntityTooLarge, "Request body too large")
 		return
 	}
@@ -96,8 +94,8 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	hasBody := r.Method != http.MethodGet && r.Method != http.MethodHead
 	if hasBody && r.Body != nil {
-		bodyBytes, _ = io.ReadAll(io.LimitReader(r.Body, maxBodySize+1))
-		if int64(len(bodyBytes)) > maxBodySize {
+		bodyBytes, _ = io.ReadAll(io.LimitReader(r.Body, maxProxyBodySize+1))
+		if int64(len(bodyBytes)) > maxProxyBodySize {
 			writeError(w, http.StatusRequestEntityTooLarge, "Request body too large")
 			return
 		}
@@ -122,7 +120,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var bodyReader io.Reader
 	if len(bodyBytes) > 0 {
-		bodyReader = strings.NewReader(string(bodyBytes))
+		bodyReader = bytes.NewReader(bodyBytes)
 	}
 
 	upstreamReq, err := http.NewRequestWithContext(ctx, r.Method, upstreamURL, bodyReader)
@@ -147,13 +145,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Execute upstream request
-	upstreamClient := &http.Client{
-		Timeout: 605 * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-	upstreamResp, err := upstreamClient.Do(upstreamReq)
+	upstreamResp, err := proxyHTTPClient.Do(upstreamReq)
 	if err != nil {
 		errMsg := err.Error()
 		log.Printf("INFO: Proxy upstream error for account %s: %v", account.ID, err)
@@ -197,26 +189,31 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	go h.logAndRecord(key, account, r, upstreamResp.StatusCode, time.Duration(durationMs)*time.Millisecond, model, usage, firstTokenMs, "")
 }
 
-// bufferAndCapture reads the full non-streaming response body, extracts usage, then writes to client.
+// bufferAndCapture streams the full non-SSE response to the client and only caches
+// up to maxProxyBodySize bytes for usage extraction, avoiding large in-memory copies.
 func (h *ProxyHandler) bufferAndCapture(w http.ResponseWriter, body io.Reader) *usageInfo {
-	bodyBytes, err := io.ReadAll(io.LimitReader(body, maxBodySize+1))
-	if err != nil {
-		_, _ = w.Write(bodyBytes) // write whatever we got
+	capture := &limitedCaptureBuffer{limit: maxProxyBodySize}
+	writer := io.MultiWriter(w, capture)
+	buf := make([]byte, 32*1024)
+
+	if _, err := io.CopyBuffer(writer, body, buf); err != nil {
 		return nil
 	}
+
+	if capture.overflow {
+		return nil
+	}
+
+	bodyBytes := capture.Bytes()
 
 	// Try to extract usage from JSON response
 	var usage usageInfo
 	if len(bodyBytes) > 0 && json.Unmarshal(bodyBytes, &struct {
 		Usage *usageInfo `json:"usage"`
 	}{Usage: &usage}) == nil && usage.hasData() {
-		// usage extracted successfully
-	} else {
-		usage = usageInfo{}
+		return &usage
 	}
-
-	_, _ = w.Write(bodyBytes)
-	return &usage
+	return nil
 }
 
 // streamAndCapture forwards SSE stream in real-time while scanning for usage data.
@@ -303,19 +300,19 @@ func (h *ProxyHandler) logAndRecord(
 	}
 
 	logEntry := store.RequestLog{
-		ID:          idgen.GenerateID("log"),
-		ApiKeyID:    key.ID,
-		AccountID:   account.ID,
-		ApiKeyName:  key.Name,
-		AccountName: account.Name,
-		Method:      r.Method,
-		Path:        r.URL.Path,
-		StatusCode:  statusCode,
-		DurationMs:  duration.Milliseconds(),
-		Model:       model,
-		Error:       errPtr,
+		ID:           idgen.GenerateID("log"),
+		ApiKeyID:     key.ID,
+		AccountID:    account.ID,
+		ApiKeyName:   key.Name,
+		AccountName:  account.Name,
+		Method:       r.Method,
+		Path:         r.URL.Path,
+		StatusCode:   statusCode,
+		DurationMs:   duration.Milliseconds(),
+		Model:        model,
+		Error:        errPtr,
 		FirstTokenMs: &firstTokenMs,
-		CreatedAt:   nowISO(),
+		CreatedAt:    nowISO(),
 	}
 	if usage != nil {
 		promptTokens := coalesce(usage.InputTokens, usage.PromptTokens)
@@ -330,6 +327,40 @@ func (h *ProxyHandler) logAndRecord(
 		}
 	}
 	store.AppendLog(logEntry)
+}
+
+type limitedCaptureBuffer struct {
+	buf      bytes.Buffer
+	limit    int64
+	overflow bool
+}
+
+func (l *limitedCaptureBuffer) Write(p []byte) (int, error) {
+	if l.limit <= 0 {
+		l.overflow = true
+		return len(p), nil
+	}
+	if l.overflow {
+		return len(p), nil
+	}
+
+	remaining := l.limit - int64(l.buf.Len())
+	if remaining <= 0 {
+		l.overflow = true
+		return len(p), nil
+	}
+
+	if int64(len(p)) > remaining {
+		_, _ = l.buf.Write(p[:remaining])
+		l.overflow = true
+		return len(p), nil
+	}
+
+	return l.buf.Write(p)
+}
+
+func (l *limitedCaptureBuffer) Bytes() []byte {
+	return l.buf.Bytes()
 }
 
 func coalesce(a, b *int64) *int64 {

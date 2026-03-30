@@ -29,7 +29,7 @@ func handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 				if err == nil && time.Now().Before(expiry) {
 					u := store.GetUserByID(session.UserID)
 					if u != nil {
-						userInfo = M{"id": u.ID, "username": u.Username, "role": u.Role}
+						userInfo = sanitizeUser(u)
 					}
 				}
 			}
@@ -143,7 +143,7 @@ func handleAuthLogin(cfg LoginConfig) http.HandlerFunc {
 			Name:     "cm_session",
 			Value:    sessionID,
 			HttpOnly: true,
-			SameSite: http.SameSiteStrictMode,
+			SameSite: http.SameSiteLaxMode,
 			MaxAge:   86400,
 			Path:     "/",
 			Secure:   secure,
@@ -153,10 +153,7 @@ func handleAuthLogin(cfg LoginConfig) http.HandlerFunc {
 		nowStr := now.Format(time.RFC3339)
 		store.UpdateUser(user.ID, M{"last_login_at": nowStr})
 
-		writeJSON(w, http.StatusOK, M{
-			"success": true,
-			"user":    M{"id": user.ID, "username": user.Username, "role": user.Role},
-		})
+		writeJSON(w, http.StatusOK, sanitizeUser(user))
 	}
 }
 
@@ -168,13 +165,15 @@ func handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 		store.DeleteSession(sessionID)
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name:    "cm_session",
-		Value:   "",
-		MaxAge:  -1,
-		Path:    "/",
-		Expires: time.Unix(0, 0),
+		Name:     "cm_session",
+		Value:    "",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+		Path:     "/",
+		Expires:  time.Unix(0, 0),
 	})
-	writeJSON(w, http.StatusOK, M{"success": true})
+	writeJSON(w, http.StatusOK, M{})
 }
 
 // ─── GET /api/auth/me ──────────────────────────────────────────────────────
@@ -210,13 +209,18 @@ func handleAuthChangePassword(w http.ResponseWriter, r *http.Request) {
 
 	var body struct {
 		CurrentPassword string `json:"current_password"`
+		OldPassword     string `json:"old_password"`
 		NewPassword     string `json:"new_password"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
-	if body.CurrentPassword == "" || body.NewPassword == "" {
+	currentPassword := body.CurrentPassword
+	if currentPassword == "" {
+		currentPassword = body.OldPassword
+	}
+	if currentPassword == "" || body.NewPassword == "" {
 		writeError(w, http.StatusBadRequest, "Current and new password required")
 		return
 	}
@@ -231,7 +235,7 @@ func handleAuthChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	valid, err := crypto.VerifyPassword(body.CurrentPassword, user.PasswordHash)
+	valid, err := crypto.VerifyPassword(currentPassword, user.PasswordHash)
 	if err != nil || !valid {
 		writeError(w, http.StatusBadRequest, "Current password is incorrect")
 		return
@@ -243,7 +247,7 @@ func handleAuthChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	store.UpdateUser(userID, M{"password_hash": newHash})
-	writeJSON(w, http.StatusOK, M{"success": true})
+	writeJSON(w, http.StatusOK, M{})
 }
 
 // LoginConfig holds configuration for the login handler.

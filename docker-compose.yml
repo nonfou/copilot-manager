@@ -3,12 +3,21 @@ services:
     build: .
     image: copilot-manager:latest
     restart: unless-stopped
+    mem_limit: 384m
     ports:
       - "${PORT:-4242}:${PORT:-4242}"
     volumes:
       - ./data:/app/data
     env_file:
       - .env
+    environment:
+      DATA_DIR: /app/data
+      NODE_ENV: production
+      GOMEMLIMIT: ${GOMEMLIMIT:-320MiB}
+      GOGC: ${GOGC:-50}
+      MAX_PROXY_BODY_SIZE: ${MAX_PROXY_BODY_SIZE:-16MiB}
+      LOG_RETENTION_COUNT: ${LOG_RETENTION_COUNT:-2000}
+      CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-120}
     healthcheck:
       test: ["CMD", "sh", "-c", "wget -qO- http://localhost:$${PORT:-4242}/health"]
       interval: 30s

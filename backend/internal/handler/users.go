@@ -15,11 +15,11 @@ import (
 // sanitizeUser strips sensitive fields from a user.
 func sanitizeUser(u *store.User) M {
 	return M{
-		"id":           u.ID,
-		"username":     u.Username,
-		"role":         u.Role,
-		"created_at":   u.CreatedAt,
-		"created_by":   u.CreatedBy,
+		"id":            u.ID,
+		"username":      u.Username,
+		"role":          u.Role,
+		"created_at":    u.CreatedAt,
+		"created_by":    u.CreatedBy,
 		"last_login_at": u.LastLoginAt,
 	}
 }
@@ -28,11 +28,22 @@ func sanitizeUser(u *store.User) M {
 
 func handleListUsers(w http.ResponseWriter, r *http.Request) {
 	users := store.GetUsers()
+	currentUser := store.GetUserByID(middleware.GetUserID(r))
 	result := make([]M, len(users))
 	for i := range users {
 		result[i] = sanitizeUser(&users[i])
 	}
-	writeJSON(w, http.StatusOK, M{"users": result, "total": len(users)})
+
+	response := M{
+		"users": result,
+		"total": len(users),
+	}
+	if currentUser != nil {
+		response["current_user"] = sanitizeUser(currentUser)
+	} else {
+		response["current_user"] = nil
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 // ─── POST /api/users ───────────────────────────────────────────────────────
@@ -69,7 +80,7 @@ func handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if store.GetUserByUsername(body.Username) != nil {
-		writeError(w, http.StatusBadRequest, "Username already exists")
+		writeError(w, http.StatusConflict, "Username already exists")
 		return
 	}
 
@@ -95,7 +106,7 @@ func handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		LastLoginAt:  nil,
 	}
 	store.AddUser(newUser)
-	writeJSON(w, http.StatusOK, M{"success": true, "user": sanitizeUser(&newUser)})
+	writeJSON(w, http.StatusCreated, sanitizeUser(&newUser))
 }
 
 // ─── GET /api/users/:id ────────────────────────────────────────────────────
@@ -107,7 +118,7 @@ func handleGetUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "User not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, M{"user": sanitizeUser(user)})
+	writeJSON(w, http.StatusOK, sanitizeUser(user))
 }
 
 // ─── PUT /api/users/:id ────────────────────────────────────────────────────
@@ -132,7 +143,7 @@ func handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	// Check username uniqueness
 	if body.Username != "" && body.Username != user.Username {
 		if store.GetUserByUsername(body.Username) != nil {
-			writeError(w, http.StatusBadRequest, "Username already exists")
+			writeError(w, http.StatusConflict, "Username already exists")
 			return
 		}
 	}
@@ -150,7 +161,7 @@ func handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Update failed")
 		return
 	}
-	writeJSON(w, http.StatusOK, M{"success": true, "user": sanitizeUser(updated)})
+	writeJSON(w, http.StatusOK, sanitizeUser(updated))
 }
 
 // ─── DELETE /api/users/:id ─────────────────────────────────────────────────
@@ -167,8 +178,8 @@ func handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "User not found")
 		return
 	}
-	success := store.DeleteUser(id)
-	writeJSON(w, http.StatusOK, M{"success": success})
+	_ = store.DeleteUser(id)
+	writeJSON(w, http.StatusOK, M{})
 }
 
 // ─── POST /api/users/:id/reset-password ────────────────────────────────────
@@ -199,5 +210,5 @@ func handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	store.UpdateUser(id, M{"password_hash": hash})
-	writeJSON(w, http.StatusOK, M{"success": true})
+	writeJSON(w, http.StatusOK, M{})
 }

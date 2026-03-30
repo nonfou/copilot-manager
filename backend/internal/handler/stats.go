@@ -29,6 +29,9 @@ func handleLogs(w http.ResponseWriter, r *http.Request) {
 	if limit <= 0 {
 		limit = 50
 	}
+	if limit > 200 {
+		limit = 50
+	}
 
 	result := store.GetLogs(page, limit, accountID, apiKeyID)
 	logs := result.Logs
