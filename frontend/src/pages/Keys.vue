@@ -7,6 +7,8 @@ import {
 } from 'naive-ui'
 import type { DataTableColumns, SelectOption } from 'naive-ui'
 import { useApi } from '../composables/useApi'
+import { EyeOutline, CreateOutline, SyncOutline, TrashOutline } from '@vicons/ionicons5'
+import { renderActionButton, renderDangerButton } from '../composables/renderTableAction'
 import type { ApiKey, Account, User } from '../types/api'
 import StatusBadge from '../components/StatusBadge.vue'
 
@@ -153,8 +155,7 @@ async function saveKeyEdit() {
 
 // ─── Regenerate key ───────────────────────────────────────────────────────────
 
-async function regenerateKey(k: ApiKey) {
-  if (!confirm(`确认重新生成 Key「${k.name}」？旧的 Key 将立即失效。`)) return
+async function doRegenerateKey(k: ApiKey) {
   try {
     const key = await api.post<ApiKey>(`/keys/${k.id}/regenerate`)
     revealedKey.value = key.key ?? ''
@@ -169,8 +170,7 @@ async function regenerateKey(k: ApiKey) {
 
 // ─── Delete key ───────────────────────────────────────────────────────────────
 
-async function deleteKey(k: ApiKey) {
-  if (!confirm(`确认删除 Key「${k.name}」？此操作不可恢复。`)) return
+async function doDeleteKey(k: ApiKey) {
   try {
     await api.delete(`/keys/${k.id}`)
     message.success('Key 已删除')
@@ -225,15 +225,13 @@ const columns: DataTableColumns<ApiKey> = [
   {
     title: '操作',
     key: 'actions',
-    width: 260,
-    render: (row) => h(NSpace, {}, {
-      default: () => [
-        h(NButton, { size: 'small', onClick: () => router.push({ name: 'KeyDetail', query: { id: row.id } }) }, { default: () => '详情' }),
-        h(NButton, { size: 'small', onClick: () => editKey(row) }, { default: () => '编辑' }),
-        h(NButton, { size: 'small', onClick: () => regenerateKey(row) }, { default: () => '重新生成' }),
-        h(NButton, { size: 'small', type: 'error', onClick: () => deleteKey(row) }, { default: () => '删除' }),
-      ],
-    }),
+    width: 130,
+    render: (row) => h('div', { style: 'display:flex; gap:4px;' }, [
+      renderActionButton({ icon: EyeOutline, tooltip: '详情', onClick: () => router.push({ name: 'KeyDetail', query: { id: row.id } }) }),
+      renderActionButton({ icon: CreateOutline, tooltip: '编辑', onClick: () => editKey(row) }),
+      renderDangerButton({ icon: SyncOutline, tooltip: '重新生成', type: 'warning', confirmText: `确认重新生成 Key「${row.name}」？旧的 Key 将立即失效。`, onConfirm: () => doRegenerateKey(row) }),
+      renderDangerButton({ icon: TrashOutline, tooltip: '删除', confirmText: `确认删除 Key「${row.name}」？此操作不可恢复。`, onConfirm: () => doDeleteKey(row) }),
+    ]),
   },
 ]
 

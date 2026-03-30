@@ -7,6 +7,8 @@ import {
 import type { DataTableColumns } from 'naive-ui'
 import { useApi } from '../composables/useApi'
 import { useAccountsStore } from '../stores/accounts'
+import { RefreshOutline, ListOutline, CreateOutline, TrashOutline } from '@vicons/ionicons5'
+import { renderActionButton, renderDangerButton } from '../composables/renderTableAction'
 import type { Account, AuthStartResponse, AuthPollResponse } from '../types/api'
 import UsageBar from '../components/UsageBar.vue'
 import type { UsageData } from '../types/api'
@@ -92,8 +94,7 @@ async function refreshUsage(id: string) {
 
 // ─── Delete ───────────────────────────────────────────────────────────────────
 
-async function deleteAccount(id: string, name: string) {
-  if (!confirm(`确认删除账号「${name}」？关联的所有 API Key 也将被删除，此操作不可恢复。`)) return
+async function deleteAccount(id: string, _name: string) {
   try {
     await api.delete(`/accounts/${id}`)
     accountsStore.invalidateCache(id)
@@ -273,15 +274,13 @@ const columns: DataTableColumns<Account> = [
   {
     title: '操作',
     key: 'actions',
-    width: 220,
-    render: (row) => h(NSpace, {}, {
-      default: () => [
-        h(NButton, { size: 'small', onClick: () => refreshUsage(row.id) }, { default: () => '↻' }),
-        h(NButton, { size: 'small', onClick: () => showModels(row) }, { default: () => '模型' }),
-        h(NButton, { size: 'small', onClick: () => openEdit(row) }, { default: () => '编辑' }),
-        h(NButton, { size: 'small', type: 'error', onClick: () => deleteAccount(row.id, row.name) }, { default: () => '删除' }),
-      ],
-    }),
+    width: 130,
+    render: (row) => h('div', { style: 'display:flex; gap:4px;' }, [
+      renderActionButton({ icon: RefreshOutline, tooltip: '刷新用量', onClick: () => refreshUsage(row.id) }),
+      renderActionButton({ icon: ListOutline, tooltip: '可用模型', onClick: () => showModels(row) }),
+      renderActionButton({ icon: CreateOutline, tooltip: '编辑', onClick: () => openEdit(row) }),
+      renderDangerButton({ icon: TrashOutline, tooltip: '删除', confirmText: `确认删除账号「${row.name}」？关联的所有 API Key 也将被删除，此操作不可恢复。`, onConfirm: () => deleteAccount(row.id, row.name) }),
+    ]),
   },
 ]
 

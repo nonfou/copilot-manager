@@ -2,10 +2,12 @@
 import { ref, h, onMounted } from 'vue'
 import {
   NCard, NButton, NDataTable, NModal, NForm, NFormItem, NInput, NSelect,
-  NText, NSpace, NSpin, useMessage,
+  NText, NSpin, useMessage,
 } from 'naive-ui'
 import type { DataTableColumns, SelectOption } from 'naive-ui'
 import { useApi } from '../composables/useApi'
+import { KeyOutline, TrashOutline } from '@vicons/ionicons5'
+import { renderActionButton, renderDangerButton } from '../composables/renderTableAction'
 import type { User, UsersListResponse } from '../types/api'
 import StatusBadge from '../components/StatusBadge.vue'
 
@@ -83,10 +85,9 @@ async function resetPassword() {
   }
 }
 
-async function deleteUser(user: User) {
-  if (!confirm(`确认删除用户「${user.username}」？此操作不可恢复。`)) return
+async function doDeleteUser(id: string) {
   try {
-    await api.delete(`/users/${user.id}`)
+    await api.delete(`/users/${id}`)
     message.success('用户已删除')
     await loadUsers()
   } catch (e) {
@@ -117,15 +118,13 @@ const columns: DataTableColumns<User> = [
   {
     title: '操作',
     key: 'actions',
-    width: 180,
-    render: (row) => h(NSpace, {}, {
-      default: () => [
-        h(NButton, { size: 'small', onClick: () => openResetPassword(row.id) }, { default: () => '重置密码' }),
-        row.id !== currentUserId
-          ? h(NButton, { size: 'small', type: 'error', onClick: () => deleteUser(row) }, { default: () => '删除' })
-          : null,
-      ].filter(Boolean),
-    }),
+    width: 100,
+    render: (row) => h('div', { style: 'display:flex; gap:4px;' }, [
+      renderActionButton({ icon: KeyOutline, tooltip: '重置密码', onClick: () => openResetPassword(row.id) }),
+      ...(row.id !== currentUserId
+        ? [renderDangerButton({ icon: TrashOutline, tooltip: '删除', confirmText: `确认删除用户「${row.username}」？此操作不可恢复。`, onConfirm: () => doDeleteUser(row.id) })]
+        : []),
+    ]),
   },
 ]
 
