@@ -2,13 +2,12 @@ package store
 
 import (
 	"crypto/subtle"
-	"database/sql"
 	"log"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"copilot-manager/internal/crypto"
+	"gorm.io/gorm"
 )
 
 const maxLogs = 5000
@@ -23,7 +22,7 @@ type keyCacheEntry struct {
 // State holds all application state.
 type State struct {
 	mu           sync.RWMutex
-	db           *sql.DB
+	db           *gorm.DB
 	authSessions map[string]AuthSession
 	sessions     map[string]UserSession
 	keyCache     []keyCacheEntry
@@ -34,116 +33,6 @@ var (
 	globalState *State
 	dataDir     string
 )
-
-// scanner is implemented by both *sql.Row and *sql.Rows.
-type scanner interface {
-	Scan(dest ...interface{}) error
-}
-
-// ─── Scan Helpers ────────────────────────────────────────────────────────────
-
-func scanUserRow(s scanner) (User, error) {
-	var u User
-	var roleStr string
-	var createdBy, lastLoginAt sql.NullString
-	err := s.Scan(&u.ID, &u.Username, &u.PasswordHash, &roleStr, &u.CreatedAt, &createdBy, &lastLoginAt)
-	if err != nil {
-		return User{}, err
-	}
-	u.Role = UserRole(roleStr)
-	if createdBy.Valid {
-		v := createdBy.String
-		u.CreatedBy = &v
-	}
-	if lastLoginAt.Valid {
-		v := lastLoginAt.String
-		u.LastLoginAt = &v
-	}
-	return u, nil
-}
-
-func scanAccountRow(s scanner) (Account, error) {
-	var a Account
-	var encToken, accountTypeStr string
-	err := s.Scan(&a.ID, &a.Name, &encToken, &accountTypeStr, &a.APIURL, &a.OwnerID, &a.CreatedAt)
-	if err != nil {
-		return Account{}, err
-	}
-	a.GithubToken = crypto.Decrypt(encToken)
-	a.AccountType = AccountType(accountTypeStr)
-	return a, nil
-}
-
-func scanApiKeyRow(s scanner) (ApiKey, error) {
-	var k ApiKey
-	var encKey string
-	var enabledInt int
-	var lastUsedAt sql.NullString
-	err := s.Scan(&k.ID, &encKey, &k.Name, &k.AccountID, &k.OwnerID, &enabledInt, &k.RequestCount, &lastUsedAt, &k.CreatedAt)
-	if err != nil {
-		return ApiKey{}, err
-	}
-	k.Key = crypto.Decrypt(encKey)
-	k.Enabled = enabledInt != 0
-	if lastUsedAt.Valid {
-		v := lastUsedAt.String
-		k.LastUsedAt = &v
-	}
-	return k, nil
-}
-
-func scanRequestLogRow(s scanner) (RequestLog, error) {
-	var l RequestLog
-	var model, errMsg sql.NullString
-	var promptTok, compTok, totalTok, firstTok sql.NullInt64
-	err := s.Scan(&l.ID, &l.ApiKeyID, &l.AccountID, &l.ApiKeyName, &l.AccountName,
-		&l.Method, &l.Path, &l.StatusCode, &l.DurationMs, &model, &errMsg,
-		&promptTok, &compTok, &totalTok, &firstTok, &l.CreatedAt)
-	if err != nil {
-		return RequestLog{}, err
-	}
-	if model.Valid {
-		v := model.String
-		l.Model = &v
-	}
-	if errMsg.Valid {
-		v := errMsg.String
-		l.Error = &v
-	}
-	if promptTok.Valid {
-		v := promptTok.Int64
-		l.PromptTokens = &v
-	}
-	if compTok.Valid {
-		v := compTok.Int64
-		l.CompletionTokens = &v
-	}
-	if totalTok.Valid {
-		v := totalTok.Int64
-		l.TotalTokens = &v
-	}
-	if firstTok.Valid {
-		v := firstTok.Int64
-		l.FirstTokenMs = &v
-	}
-	return l, nil
-}
-
-// nullString converts *string to an interface{} suitable for SQL (nil → NULL).
-func nullString(s *string) interface{} {
-	if s == nil {
-		return nil
-	}
-	return *s
-}
-
-// nullInt64 converts *int64 to an interface{} suitable for SQL (nil → NULL).
-func nullInt64(v *int64) interface{} {
-	if v == nil {
-		return nil
-	}
-	return *v
-}
 
 // ─── Init / Load / Flush ─────────────────────────────────────────────────────
 
@@ -165,7 +54,7 @@ func LoadStore() {
 	if err != nil {
 		log.Fatalf("FATAL: 初始化数据库失败: %v", err)
 	}
-	if err := execSchema(db); err != nil {
+	if err := execMigrate(db); err != nil {
 		log.Fatalf("FATAL: 建表失败: %v", err)
 	}
 	s.mu.Lock()
@@ -175,20 +64,17 @@ func LoadStore() {
 	rebuildKeyCache()
 
 	var count int64
-	if err := db.QueryRow("SELECT COUNT(*) FROM request_logs").Scan(&count); err != nil {
-		log.Printf("WARN: 获取日志计数失败: %v", err)
-	}
+	db.Model(&RequestLog{}).Count(&count)
 	s.logCount.Store(count)
 }
 
 // FlushPendingWrites performs a WAL checkpoint (called on shutdown).
-// Signature is kept identical to the JSON-based implementation.
 func FlushPendingWrites() {
 	s := globalState
 	if s == nil || s.db == nil {
 		return
 	}
-	if _, err := s.db.Exec("PRAGMA wal_checkpoint(PASSIVE)"); err != nil {
+	if err := s.db.Exec("PRAGMA wal_checkpoint(PASSIVE)").Error; err != nil {
 		log.Printf("WARN: WAL checkpoint 失败: %v", err)
 	}
 }
@@ -196,24 +82,14 @@ func FlushPendingWrites() {
 // rebuildKeyCache reloads the in-memory plaintext key cache from the DB.
 func rebuildKeyCache() {
 	s := globalState
-	rows, err := s.db.Query("SELECT id, key, enabled FROM api_keys")
-	if err != nil {
+	var keys []ApiKey
+	if err := s.db.Select("id, key, enabled").Find(&keys).Error; err != nil {
 		log.Printf("WARN: 预加载 keyCache 失败: %v", err)
 		return
 	}
-	defer rows.Close()
-
-	var cache []keyCacheEntry
-	for rows.Next() {
-		var entry keyCacheEntry
-		var encKey string
-		var enabledInt int
-		if err := rows.Scan(&entry.keyID, &encKey, &enabledInt); err != nil {
-			continue
-		}
-		entry.keyVal = crypto.Decrypt(encKey)
-		entry.enabled = enabledInt != 0
-		cache = append(cache, entry)
+	cache := make([]keyCacheEntry, 0, len(keys))
+	for _, k := range keys {
+		cache = append(cache, keyCacheEntry{keyID: k.ID, keyVal: k.Key, enabled: k.Enabled})
 	}
 	s.mu.Lock()
 	s.keyCache = cache
@@ -224,47 +100,26 @@ func rebuildKeyCache() {
 
 func GetAccounts(ownerID string) []Account {
 	s := globalState
-	var rows *sql.Rows
-	var err error
-	const q = `SELECT id, name, github_token, account_type, api_url, owner_id, created_at FROM accounts`
-	if ownerID == "" {
-		rows, err = s.db.Query(q + " ORDER BY created_at ASC")
-	} else {
-		rows, err = s.db.Query(q+" WHERE owner_id=? ORDER BY created_at ASC", ownerID)
+	var result []Account
+	q := s.db.Order("created_at ASC")
+	if ownerID != "" {
+		q = q.Where("owner_id = ?", ownerID)
 	}
-	if err != nil {
+	if err := q.Find(&result).Error; err != nil {
 		log.Printf("ERROR: 查询账号失败: %v", err)
 		return nil
-	}
-	defer rows.Close()
-
-	var result []Account
-	for rows.Next() {
-		a, err := scanAccountRow(rows)
-		if err != nil {
-			log.Printf("WARN: 扫描账号行失败: %v", err)
-			continue
-		}
-		result = append(result, a)
 	}
 	return result
 }
 
 func GetAccountByID(id, ownerID string) *Account {
 	s := globalState
-	const q = `SELECT id, name, github_token, account_type, api_url, owner_id, created_at FROM accounts WHERE id=?`
-	var row *sql.Row
-	if ownerID == "" {
-		row = s.db.QueryRow(q, id)
-	} else {
-		row = s.db.QueryRow(q+" AND owner_id=?", id, ownerID)
+	var a Account
+	q := s.db.Where("id = ?", id)
+	if ownerID != "" {
+		q = q.Where("owner_id = ?", ownerID)
 	}
-	a, err := scanAccountRow(row)
-	if err == sql.ErrNoRows {
-		return nil
-	}
-	if err != nil {
-		log.Printf("ERROR: 查询账号失败: %v", err)
+	if err := q.First(&a).Error; err != nil {
 		return nil
 	}
 	return &a
@@ -272,12 +127,7 @@ func GetAccountByID(id, ownerID string) *Account {
 
 func AddAccount(account Account) {
 	s := globalState
-	encToken := crypto.Encrypt(account.GithubToken)
-	_, err := s.db.Exec(
-		`INSERT INTO accounts (id, name, github_token, account_type, api_url, owner_id, created_at) VALUES (?,?,?,?,?,?,?)`,
-		account.ID, account.Name, encToken, string(account.AccountType), account.APIURL, account.OwnerID, account.CreatedAt,
-	)
-	if err != nil {
+	if err := s.db.Create(&account).Error; err != nil {
 		log.Printf("ERROR: 插入账号失败: %v", err)
 	}
 }
@@ -300,12 +150,7 @@ func UpdateAccount(id, ownerID string, data map[string]interface{}) *Account {
 		a.APIURL = v
 	}
 	s := globalState
-	encToken := crypto.Encrypt(a.GithubToken)
-	_, err := s.db.Exec(
-		`UPDATE accounts SET name=?, github_token=?, account_type=?, api_url=? WHERE id=?`,
-		a.Name, encToken, string(a.AccountType), a.APIURL, id,
-	)
-	if err != nil {
+	if err := s.db.Save(a).Error; err != nil {
 		log.Printf("ERROR: 更新账号失败: %v", err)
 		return nil
 	}
@@ -314,70 +159,41 @@ func UpdateAccount(id, ownerID string, data map[string]interface{}) *Account {
 
 func DeleteAccount(id, ownerID string) bool {
 	s := globalState
-	var res sql.Result
-	var err error
-	if ownerID == "" {
-		res, err = s.db.Exec(`DELETE FROM accounts WHERE id=?`, id)
-	} else {
-		res, err = s.db.Exec(`DELETE FROM accounts WHERE id=? AND owner_id=?`, id, ownerID)
+	q := s.db.Where("id = ?", id)
+	if ownerID != "" {
+		q = q.Where("owner_id = ?", ownerID)
 	}
-	if err != nil {
-		log.Printf("ERROR: 删除账号失败: %v", err)
-		return false
-	}
-	n, _ := res.RowsAffected()
-	return n > 0
+	result := q.Delete(&Account{})
+	return result.RowsAffected > 0
 }
 
 // ─── ApiKey CRUD ──────────────────────────────────────────────────────────────
 
 func GetKeys(ownerID, accountID string) []ApiKey {
 	s := globalState
-	query := `SELECT id, key, name, account_id, owner_id, enabled, request_count, last_used_at, created_at FROM api_keys WHERE 1=1`
-	args := []interface{}{}
+	var result []ApiKey
+	q := s.db.Order("created_at ASC")
 	if ownerID != "" {
-		query += " AND owner_id=?"
-		args = append(args, ownerID)
+		q = q.Where("owner_id = ?", ownerID)
 	}
 	if accountID != "" {
-		query += " AND account_id=?"
-		args = append(args, accountID)
+		q = q.Where("account_id = ?", accountID)
 	}
-	query += " ORDER BY created_at ASC"
-	rows, err := s.db.Query(query, args...)
-	if err != nil {
+	if err := q.Find(&result).Error; err != nil {
 		log.Printf("ERROR: 查询 API 密钥失败: %v", err)
 		return nil
-	}
-	defer rows.Close()
-
-	var result []ApiKey
-	for rows.Next() {
-		k, err := scanApiKeyRow(rows)
-		if err != nil {
-			log.Printf("WARN: 扫描 API 密钥行失败: %v", err)
-			continue
-		}
-		result = append(result, k)
 	}
 	return result
 }
 
 func GetKeyByID(id, ownerID string) *ApiKey {
 	s := globalState
-	const q = `SELECT id, key, name, account_id, owner_id, enabled, request_count, last_used_at, created_at FROM api_keys WHERE id=?`
-	var row *sql.Row
-	if ownerID == "" {
-		row = s.db.QueryRow(q, id)
-	} else {
-		row = s.db.QueryRow(q+" AND owner_id=?", id, ownerID)
+	var k ApiKey
+	q := s.db.Where("id = ?", id)
+	if ownerID != "" {
+		q = q.Where("owner_id = ?", ownerID)
 	}
-	k, err := scanApiKeyRow(row)
-	if err == sql.ErrNoRows {
-		return nil
-	}
-	if err != nil {
-		log.Printf("ERROR: 查询 API 密钥失败: %v", err)
+	if err := q.First(&k).Error; err != nil {
 		return nil
 	}
 	return &k
@@ -385,16 +201,7 @@ func GetKeyByID(id, ownerID string) *ApiKey {
 
 func AddKey(key ApiKey) {
 	s := globalState
-	encKey := crypto.Encrypt(key.Key)
-	enabledInt := 0
-	if key.Enabled {
-		enabledInt = 1
-	}
-	_, err := s.db.Exec(
-		`INSERT INTO api_keys (id, key, name, account_id, owner_id, enabled, request_count, last_used_at, created_at) VALUES (?,?,?,?,?,?,?,?,?)`,
-		key.ID, encKey, key.Name, key.AccountID, key.OwnerID, enabledInt, key.RequestCount, nullString(key.LastUsedAt), key.CreatedAt,
-	)
-	if err != nil {
+	if err := s.db.Create(&key).Error; err != nil {
 		log.Printf("ERROR: 插入 API 密钥失败: %v", err)
 		return
 	}
@@ -420,16 +227,7 @@ func UpdateKey(id, ownerID string, data map[string]interface{}) *ApiKey {
 		}
 	}
 	s := globalState
-	encKey := crypto.Encrypt(k.Key)
-	enabledInt := 0
-	if k.Enabled {
-		enabledInt = 1
-	}
-	_, err := s.db.Exec(
-		`UPDATE api_keys SET key=?, name=?, enabled=? WHERE id=?`,
-		encKey, k.Name, enabledInt, id,
-	)
-	if err != nil {
+	if err := s.db.Save(k).Error; err != nil {
 		log.Printf("ERROR: 更新 API 密钥失败: %v", err)
 		return nil
 	}
@@ -447,19 +245,12 @@ func UpdateKey(id, ownerID string, data map[string]interface{}) *ApiKey {
 
 func DeleteKey(id, ownerID string) bool {
 	s := globalState
-	var res sql.Result
-	var err error
-	if ownerID == "" {
-		res, err = s.db.Exec(`DELETE FROM api_keys WHERE id=?`, id)
-	} else {
-		res, err = s.db.Exec(`DELETE FROM api_keys WHERE id=? AND owner_id=?`, id, ownerID)
+	q := s.db.Where("id = ?", id)
+	if ownerID != "" {
+		q = q.Where("owner_id = ?", ownerID)
 	}
-	if err != nil {
-		log.Printf("ERROR: 删除 API 密钥失败: %v", err)
-		return false
-	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
+	result := q.Delete(&ApiKey{})
+	if result.RowsAffected == 0 {
 		return false
 	}
 	s.mu.Lock()
@@ -524,64 +315,32 @@ func GetLogs(page, limit int, accountID, apiKeyID string) LogsResult {
 	if page <= 0 {
 		page = 1
 	}
-	offset := (page - 1) * limit
 
-	countQuery := "SELECT COUNT(*) FROM request_logs WHERE 1=1"
-	dataQuery := `SELECT id, api_key_id, account_id, api_key_name, account_name, method, path, status_code, duration_ms, model, error, prompt_tokens, completion_tokens, total_tokens, first_token_ms, created_at FROM request_logs WHERE 1=1`
-	args := []interface{}{}
-
-	if accountID != "" {
-		countQuery += " AND account_id=?"
-		dataQuery += " AND account_id=?"
-		args = append(args, accountID)
-	}
-	if apiKeyID != "" {
-		countQuery += " AND api_key_id=?"
-		dataQuery += " AND api_key_id=?"
-		args = append(args, apiKeyID)
-	}
-	dataQuery += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
-
-	var total int
-	if err := s.db.QueryRow(countQuery, args...).Scan(&total); err != nil {
-		log.Printf("ERROR: 查询日志数量失败: %v", err)
-		return LogsResult{Logs: []RequestLog{}, Total: 0}
+	applyFilters := func(q *gorm.DB) *gorm.DB {
+		if accountID != "" {
+			q = q.Where("account_id = ?", accountID)
+		}
+		if apiKeyID != "" {
+			q = q.Where("api_key_id = ?", apiKeyID)
+		}
+		return q
 	}
 
-	dataArgs := append(args, limit, offset)
-	rows, err := s.db.Query(dataQuery, dataArgs...)
-	if err != nil {
-		log.Printf("ERROR: 查询日志失败: %v", err)
-		return LogsResult{Logs: []RequestLog{}, Total: total}
-	}
-	defer rows.Close()
+	var total int64
+	applyFilters(s.db.Model(&RequestLog{})).Count(&total)
 
 	var logs []RequestLog
-	for rows.Next() {
-		l, err := scanRequestLogRow(rows)
-		if err != nil {
-			log.Printf("WARN: 扫描日志行失败: %v", err)
-			continue
-		}
-		logs = append(logs, l)
-	}
+	applyFilters(s.db.Model(&RequestLog{})).
+		Order("created_at DESC").Limit(limit).Offset((page-1)*limit).Find(&logs)
 	if logs == nil {
 		logs = []RequestLog{}
 	}
-	return LogsResult{Logs: logs, Total: total}
+	return LogsResult{Logs: logs, Total: int(total)}
 }
 
 func AppendLog(l RequestLog) {
 	s := globalState
-	_, err := s.db.Exec(
-		`INSERT INTO request_logs (id, api_key_id, account_id, api_key_name, account_name, method, path, status_code, duration_ms, model, error, prompt_tokens, completion_tokens, total_tokens, first_token_ms, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		l.ID, l.ApiKeyID, l.AccountID, l.ApiKeyName, l.AccountName,
-		l.Method, l.Path, l.StatusCode, l.DurationMs,
-		nullString(l.Model), nullString(l.Error),
-		nullInt64(l.PromptTokens), nullInt64(l.CompletionTokens), nullInt64(l.TotalTokens), nullInt64(l.FirstTokenMs),
-		l.CreatedAt,
-	)
-	if err != nil {
+	if err := s.db.Create(&l).Error; err != nil {
 		log.Printf("ERROR: 插入日志失败: %v", err)
 		return
 	}
@@ -597,10 +356,8 @@ func AppendLog(l RequestLog) {
 func IncrementKeyRequestCount(keyID string) {
 	s := globalState
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	if _, err := s.db.Exec(
-		`UPDATE api_keys SET request_count = request_count + 1, last_used_at = ? WHERE id = ?`,
-		now, keyID,
-	); err != nil {
+	if err := s.db.Model(&ApiKey{}).Where("id = ?", keyID).
+		Updates(map[string]interface{}{"request_count": gorm.Expr("request_count + 1"), "last_used_at": now}).Error; err != nil {
 		log.Printf("WARN: 更新请求计数失败: %v", err)
 	}
 }
@@ -618,16 +375,20 @@ type Stats struct {
 func GetStats() Stats {
 	s := globalState
 	var stats Stats
-	s.db.QueryRow("SELECT COUNT(*) FROM accounts").Scan(&stats.TotalAccounts)
-	s.db.QueryRow("SELECT COUNT(*) FROM api_keys WHERE enabled=1").Scan(&stats.EnabledKeys)
-	s.db.QueryRow("SELECT COUNT(*) FROM request_logs").Scan(&stats.TotalRequests)
+
+	var totalAccounts, enabledKeys, totalRequests, todayRequests int64
+	s.db.Model(&Account{}).Count(&totalAccounts)
+	s.db.Model(&ApiKey{}).Where("enabled = ?", true).Count(&enabledKeys)
+	s.db.Model(&RequestLog{}).Count(&totalRequests)
 
 	today := time.Now().UTC().Format("2006-01-02")
 	tomorrow := time.Now().UTC().AddDate(0, 0, 1).Format("2006-01-02")
-	s.db.QueryRow(
-		"SELECT COUNT(*) FROM request_logs WHERE created_at >= ? AND created_at < ?",
-		today+"T00:00:00Z", tomorrow+"T00:00:00Z",
-	).Scan(&stats.TodayRequests)
+	s.db.Model(&RequestLog{}).Where("created_at >= ? AND created_at < ?", today+"T00:00:00Z", tomorrow+"T00:00:00Z").Count(&todayRequests)
+
+	stats.TotalAccounts = int(totalAccounts)
+	stats.EnabledKeys = int(enabledKeys)
+	stats.TotalRequests = int(totalRequests)
+	stats.TodayRequests = int(todayRequests)
 	return stats
 }
 
@@ -662,34 +423,18 @@ func DeleteAuthSession(authID string) {
 
 func GetUsers() []User {
 	s := globalState
-	rows, err := s.db.Query(`SELECT id, username, password_hash, role, created_at, created_by, last_login_at FROM users ORDER BY created_at ASC`)
-	if err != nil {
+	var result []User
+	if err := s.db.Order("created_at ASC").Find(&result).Error; err != nil {
 		log.Printf("ERROR: 查询用户失败: %v", err)
 		return nil
-	}
-	defer rows.Close()
-
-	var result []User
-	for rows.Next() {
-		u, err := scanUserRow(rows)
-		if err != nil {
-			log.Printf("WARN: 扫描用户行失败: %v", err)
-			continue
-		}
-		result = append(result, u)
 	}
 	return result
 }
 
 func GetUserByID(id string) *User {
 	s := globalState
-	row := s.db.QueryRow(`SELECT id, username, password_hash, role, created_at, created_by, last_login_at FROM users WHERE id=?`, id)
-	u, err := scanUserRow(row)
-	if err == sql.ErrNoRows {
-		return nil
-	}
-	if err != nil {
-		log.Printf("ERROR: 查询用户失败: %v", err)
+	var u User
+	if err := s.db.Where("id = ?", id).First(&u).Error; err != nil {
 		return nil
 	}
 	return &u
@@ -697,13 +442,8 @@ func GetUserByID(id string) *User {
 
 func GetUserByUsername(username string) *User {
 	s := globalState
-	row := s.db.QueryRow(`SELECT id, username, password_hash, role, created_at, created_by, last_login_at FROM users WHERE username=?`, username)
-	u, err := scanUserRow(row)
-	if err == sql.ErrNoRows {
-		return nil
-	}
-	if err != nil {
-		log.Printf("ERROR: 查询用户失败: %v", err)
+	var u User
+	if err := s.db.Where("username = ?", username).First(&u).Error; err != nil {
 		return nil
 	}
 	return &u
@@ -711,12 +451,7 @@ func GetUserByUsername(username string) *User {
 
 func AddUser(user User) {
 	s := globalState
-	_, err := s.db.Exec(
-		`INSERT INTO users (id, username, password_hash, role, created_at, created_by, last_login_at) VALUES (?,?,?,?,?,?,?)`,
-		user.ID, user.Username, user.PasswordHash, string(user.Role), user.CreatedAt,
-		nullString(user.CreatedBy), nullString(user.LastLoginAt),
-	)
-	if err != nil {
+	if err := s.db.Create(&user).Error; err != nil {
 		log.Printf("ERROR: 插入用户失败: %v", err)
 	}
 }
@@ -742,11 +477,7 @@ func UpdateUser(id string, data map[string]interface{}) *User {
 		}
 	}
 	s := globalState
-	_, err := s.db.Exec(
-		`UPDATE users SET username=?, password_hash=?, role=?, last_login_at=? WHERE id=?`,
-		u.Username, u.PasswordHash, string(u.Role), nullString(u.LastLoginAt), id,
-	)
-	if err != nil {
+	if err := s.db.Save(u).Error; err != nil {
 		log.Printf("ERROR: 更新用户失败: %v", err)
 		return nil
 	}
@@ -755,13 +486,8 @@ func UpdateUser(id string, data map[string]interface{}) *User {
 
 func DeleteUser(id string) bool {
 	s := globalState
-	res, err := s.db.Exec(`DELETE FROM users WHERE id=?`, id)
-	if err != nil {
-		log.Printf("ERROR: 删除用户失败: %v", err)
-		return false
-	}
-	n, _ := res.RowsAffected()
-	return n > 0
+	result := s.db.Where("id = ?", id).Delete(&User{})
+	return result.RowsAffected > 0
 }
 
 // ─── Session Management ───────────────────────────────────────────────────────
@@ -797,12 +523,9 @@ func DeleteSession(sessionID string) {
 func GetSystemConfig() *SystemConfig {
 	s := globalState
 	var config SystemConfig
-	var initializedInt int
-	err := s.db.QueryRow(`SELECT initialized, admin_created_at FROM system_config WHERE id=1`).Scan(&initializedInt, &config.AdminCreatedAt)
-	if err != nil {
+	if err := s.db.First(&config, 1).Error; err != nil {
 		return nil
 	}
-	config.Initialized = initializedInt != 0
 	if !config.Initialized {
 		return nil
 	}
@@ -811,15 +534,8 @@ func GetSystemConfig() *SystemConfig {
 
 func SetSystemConfig(config SystemConfig) {
 	s := globalState
-	initializedInt := 0
-	if config.Initialized {
-		initializedInt = 1
-	}
-	_, err := s.db.Exec(
-		`UPDATE system_config SET initialized=?, admin_created_at=? WHERE id=1`,
-		initializedInt, config.AdminCreatedAt,
-	)
-	if err != nil {
+	config.ID = 1
+	if err := s.db.Save(&config).Error; err != nil {
 		log.Printf("ERROR: 更新系统配置失败: %v", err)
 	}
 }
