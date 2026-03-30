@@ -138,7 +138,7 @@ func handleAuthLogin(cfg LoginConfig) http.HandlerFunc {
 		})
 
 		// Set cookie
-		secure := cfg.NodeEnv == "production" || cfg.HTTPS
+		secure := cfg.HTTPS || isHTTPSRequest(r, cfg.TrustedProxy)
 		http.SetCookie(w, &http.Cookie{
 			Name:     "cm_session",
 			Value:    sessionID,
@@ -171,6 +171,7 @@ func handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 		Path:     "/",
+		Secure:   loginCfg.HTTPS || isHTTPSRequest(r, loginCfg.TrustedProxy),
 		Expires:  time.Unix(0, 0),
 	})
 	writeJSON(w, http.StatusOK, M{})

@@ -39,6 +39,28 @@ func getClientIP(r *http.Request, trustedProxy bool) string {
 	return r.RemoteAddr
 }
 
+// isHTTPSRequest reports whether the original request was served over HTTPS.
+// When trustedProxy is enabled, it respects proxy forwarding headers.
+func isHTTPSRequest(r *http.Request, trustedProxy bool) bool {
+	if r.TLS != nil {
+		return true
+	}
+	if !trustedProxy {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https") {
+		return true
+	}
+	forwarded := r.Header.Get("Forwarded")
+	for _, part := range strings.Split(forwarded, ";") {
+		part = strings.TrimSpace(part)
+		if strings.EqualFold(part, "proto=https") {
+			return true
+		}
+	}
+	return false
+}
+
 // itoa converts an int to string.
 func itoa(n int) string {
 	return strconv.Itoa(n)
