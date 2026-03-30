@@ -7,7 +7,7 @@
 ## 技术栈
 
 - **后端**：Go 1.25 + chi v5 + GORM + SQLite（glebarez/sqlite，纯 Go 无 CGO）
-- **前端**：Vue 3 + TypeScript + Naive UI（暗色主题）+ Pinia + Vue Router 4
+- **前端**：原生静态 HTML + CSS + JavaScript（零依赖、hash 路由）
 - **认证**：Session Cookie（`cm_session`），无 JWT
 - **加密**：AES-256-GCM（`enc:<iv>:<tag>:<ct>` 格式）
 
@@ -26,16 +26,12 @@ copilot-manager/
 │       ├── ratelimit/          # 登录限流 + 代理限流
 │       ├── middleware/          # Auth / Admin / SecurityHeaders / CORS
 │       └── handler/            # HTTP 处理器 + 路由 + SPA 服务
-├── frontend/                   # Vue 3 前端
-│   └── src/
-│       ├── main.ts / App.vue
-│       ├── types/api.ts        # TypeScript 接口定义
-│       ├── composables/useApi.ts
-│       ├── stores/auth.ts + accounts.ts
-│       ├── router/index.ts
-│       ├── layouts/            # DefaultLayout / AuthLayout
-│       ├── components/         # AppSidebar / UsageBar / StatusBadge
-│       └── pages/              # Login Dashboard Accounts Keys KeyDetail Users Logs
+├── frontend/
+│   └── static/                 # 原生静态前端
+│       ├── index.html
+│       ├── styles.css
+│       ├── app.js
+│       └── *.js                # 各页面模块
 ├── data/                       # SQLite 数据库（不提交）
 └── .env.example
 ```
@@ -80,8 +76,8 @@ copilot-manager/
 **代理（API Key 认证）：**
 - `* /v1/*` — 反向代理到 account.api_url（600s 超时，100MB body 限制）
 
-**SPA：**
-- `/ui/*` — 从 `frontend/dist` 提供静态文件，fallback 到 index.html
+**静态前端：**
+- `/ui/*` — 从 `frontend/static` 提供静态文件，fallback 到 index.html
 
 ### 数据模型
 
@@ -103,53 +99,21 @@ copilot-manager/
 
 ## 前端架构
 
-### 启动顺序
-
-`createApp(App)` → `app.use(createPinia())` → `app.use(router)` → `app.mount('#app')`
-
-**关键**：Pinia 必须在 Router 之前安装（路由守卫使用 `useAuthStore()`）。
-
-### 路由
-
-| 路径 | 页面 | 访问权限 |
-|------|------|----------|
-| `/login` | Login.vue | 公开 |
-| `/dashboard` | Dashboard.vue | 管理员 |
-| `/accounts` | Accounts.vue | 管理员 |
-| `/keys` | Keys.vue | 管理员 |
-| `/key-detail` | KeyDetail.vue | 所有认证用户 |
-| `/users` | Users.vue | 管理员 |
-| `/logs` | Logs.vue | 管理员 |
-
-路由 base：`/ui/`，history 模式。守卫在 `router/index.ts` 的 `beforeEach` 中。
-
-### Pinia Store
-
-- **auth store** (`stores/auth.ts`)：`user` / `checked` 状态，`checkAuth()` / `login()` / `logout()` 操作
-- **accounts store** (`stores/accounts.ts`)：`accounts` 列表 + `usageCache` / `modelsCache`（5 分钟 TTL）
-
-### useApi (`composables/useApi.ts`)
-
-工厂函数返回 `{ get, post, put, delete }`，所有请求通过 `fetch('/api${path}')` 发送，401 自动跳转 Login。直接 `import router`（不用 `useRouter()`）。
-
-### 布局
-
-- **DefaultLayout**：左侧边栏（220px）+ 右侧内容区
-- **AuthLayout**：居中布局（用于登录页）
-- `App.vue` 根据 `route.meta.layout` 选择布局
+- 入口：`frontend/static/index.html`
+- 样式：`frontend/static/styles.css`
+- 逻辑：`frontend/static/app.js` + 分页面模块（login / dashboard / accounts / keys / key-detail / logs / users）
+- 路由：基于 `#/dashboard`、`#/accounts` 等 hash 路由
+- 认证：继续使用 session cookie，所有请求仍走 `/api/*`
+- 页面：Login / Dashboard / Accounts / Keys / KeyDetail / Logs / Users 全部保留
 
 ## 构建与运行
 
 ```bash
-# 前端构建
-cd frontend && npm run build    # 输出到 frontend/dist/
-
 # 后端构建
-cd backend && go build -ldflags="-s -w" -o ../copilot-manager-go.exe ./cmd/server/
+cd backend && CGO_ENABLED=0 go build -ldflags="-s -w" -o ../copilot-manager-go.exe ./cmd/server/
 
 # 开发模式
-cd frontend && npm run dev      # Vite :5173, proxy /api /v1 → :8080
-cd backend && go run ./cmd/server/  # Go :8080
+cd backend && CGO_ENABLED=0 go run ./cmd/server/  # Go :8080
 
 # 生产运行（从项目根目录）
 ./copilot-manager-go.exe        # 自动解析 ./frontend/ 和 ./data/
@@ -181,8 +145,10 @@ cd backend && go run ./cmd/server/  # Go :8080
 | 代理处理器 | `backend/internal/handler/proxy.go` |
 | 认证中间件 | `backend/internal/middleware/auth.go` |
 | 加密工具 | `backend/internal/crypto/encrypt.go` |
-| 前端入口 | `frontend/src/main.ts` |
-| 前端路由 | `frontend/src/router/index.ts` |
-| 类型定义 | `frontend/src/types/api.ts` |
-| API 客户端 | `frontend/src/composables/useApi.ts` |
-| Vite 配置 | `frontend/vite.config.ts` |
+| 前端入口 | `frontend/static/index.html` |
+| 前端样式 | `frontend/static/styles.css` |
+| 前端路由与启动 | `frontend/static/app.js` |
+
+
+
+

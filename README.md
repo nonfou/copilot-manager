@@ -21,7 +21,7 @@
 
 每个账号对应一个独立运行的 `copilot-api` 实例，copilot-manager 不管理子进程，只做请求转发。
 
-当前后端为 **Go 轻量版**，用于降低 2G 小内存服务器上的常驻占用。
+当前后端为 **Go 轻量版**，并使用 **纯 Go SQLite 驱动** 避免 Docker / 小内存机器上的 CGO 构建开销；前端为 **原生静态 HTML/CSS/JS**，进一步降低部署复杂度。
 
 ---
 
@@ -48,7 +48,7 @@ curl http://localhost:8080/v1/models
 ### 前置依赖
 
 - **Go 1.25+**
-- **Node.js 18+ + pnpm**（用于构建前端）
+- **前端为原生静态文件**（无需 Node.js / pnpm 构建）
 
 ### 1. 克隆仓库
 
@@ -83,12 +83,11 @@ openssl rand -hex 32
 ### 3. 构建
 
 ```bash
-# 构建前端
-cd frontend && pnpm install && pnpm run build && cd ..
-
-# 构建 Go 后端
-cd backend && go build -trimpath -ldflags="-s -w" -o bin/copilot-manager ./cmd/server && cd ..
+# 构建 Go 后端（纯 Go SQLite，无需 CGO）
+cd backend && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/copilot-manager ./cmd/server && cd ..
 ```
+
+前端位于 `frontend/static/`，为原生静态资源，无需额外构建。
 
 ### 4. 启动
 
@@ -107,11 +106,10 @@ DATA_DIR=data ./backend/bin/copilot-manager
 
 ```bash
 # 后端
-cd backend && go run ./cmd/server
-
-# 前端（Vite 开发服务器，代理 /api /v1 → localhost:4242）
-cd frontend && pnpm run dev
+cd backend && CGO_ENABLED=0 go run ./cmd/server
 ```
+
+前端为原生静态页面，直接由 Go 后端通过 `/ui/` 提供，无需单独开发服务器。
 
 ---
 
@@ -241,3 +239,7 @@ curl http://localhost:4242/v1/chat/completions \
 - 代理转发时会去掉客户端的 `Authorization` 头，由 copilot-api 实例负责鉴权
 - SQLite 使用 WAL 模式，`DATA_DIR` 目录需有写权限
 - 对于 2G 服务器，建议优先使用 Docker Compose 默认配置或保留 `GOMEMLIMIT=320MiB`
+
+
+
+

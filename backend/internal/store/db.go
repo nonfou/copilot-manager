@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -17,7 +17,7 @@ func openDB(dir string) (*gorm.DB, error) {
 	}
 	dbPath := filepath.Join(dir, "copilot-manager.db")
 
-	db, err := gorm.Open(sqlite.Open(dbPath+"?_journal_mode=WAL&_busy_timeout=5000&_synchronous=NORMAL&_foreign_keys=ON"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
 	if err != nil {
 		return nil, fmt.Errorf("打开 SQLite 失败: %w", err)
 	}
@@ -28,6 +28,18 @@ func openDB(dir string) (*gorm.DB, error) {
 		return nil, fmt.Errorf("获取底层 DB 失败: %w", err)
 	}
 	sqlDB.SetMaxOpenConns(1)
+
+	pragmas := []string{
+		"PRAGMA journal_mode=WAL",
+		"PRAGMA busy_timeout=5000",
+		"PRAGMA synchronous=NORMAL",
+		"PRAGMA foreign_keys=ON",
+	}
+	for _, pragma := range pragmas {
+		if err := db.Exec(pragma).Error; err != nil {
+			return nil, fmt.Errorf("设置 SQLite pragma 失败 (%s): %w", pragma, err)
+		}
+	}
 
 	return db, nil
 }

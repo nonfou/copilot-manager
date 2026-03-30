@@ -120,8 +120,10 @@ func NewRouter(rateLimitPerMin int) http.Handler {
 // Prefers frontend/dist (Vite build output), falls back to frontend/.
 func resolvePublicDir() string {
 	candidates := []string{
+		"frontend/static",
 		"frontend/dist",
 		"frontend",
+		"../frontend/static",
 		"../frontend/dist",
 		"../frontend",
 	}

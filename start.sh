@@ -41,15 +41,17 @@ if [ -z "$_PORT" ] && [ -z "${PORT+x}" ]; then
 fi
 PORT="${_PORT:-${PORT:-4242}}"
 
-# ─── 构建前端 ─────────────────────────────────────────────────────────────────
-echo "[info] 构建前端..."
-(cd frontend && pnpm install && pnpm run build)
-echo "[info] 前端构建完成"
+# ─── 检查前端静态文件 ─────────────────────────────────────────────────────────
+if [ ! -f "frontend/static/index.html" ]; then
+  echo "[error] 缺少前端静态文件：frontend/static/index.html"
+  exit 1
+fi
+echo "[info] 前端采用原生静态资源，无需构建"
 
 # ─── 构建 Go 后端 ─────────────────────────────────────────────────────────────
 echo "[info] 构建 Go 后端..."
 mkdir -p backend/bin
-(cd backend && go build -trimpath -ldflags="-s -w" -o "bin/copilot-manager" ./cmd/server)
+(cd backend && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "bin/copilot-manager" ./cmd/server)
 echo "[info] 构建完成：$BINARY"
 
 # ─── 启动命令 ─────────────────────────────────────────────────────────────────
