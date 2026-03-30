@@ -51,18 +51,22 @@ CREATE INDEX IF NOT EXISTS idx_api_keys_account_id ON api_keys(account_id);
 CREATE INDEX IF NOT EXISTS idx_api_keys_owner_id ON api_keys(owner_id);
 CREATE INDEX IF NOT EXISTS idx_api_keys_enabled ON api_keys(enabled);
 CREATE TABLE IF NOT EXISTS request_logs (
-    id           TEXT PRIMARY KEY,
-    api_key_id   TEXT NOT NULL,
-    account_id   TEXT NOT NULL,
-    api_key_name TEXT NOT NULL,
-    account_name TEXT NOT NULL,
-    method       TEXT NOT NULL,
-    path         TEXT NOT NULL,
-    status_code  INTEGER NOT NULL,
-    duration_ms  INTEGER NOT NULL,
-    model        TEXT,
-    error        TEXT,
-    created_at   TEXT NOT NULL
+    id                TEXT PRIMARY KEY,
+    api_key_id        TEXT NOT NULL,
+    account_id        TEXT NOT NULL,
+    api_key_name      TEXT NOT NULL,
+    account_name      TEXT NOT NULL,
+    method            TEXT NOT NULL,
+    path              TEXT NOT NULL,
+    status_code       INTEGER NOT NULL,
+    duration_ms       INTEGER NOT NULL,
+    model             TEXT,
+    error             TEXT,
+    prompt_tokens     INTEGER,
+    completion_tokens INTEGER,
+    total_tokens      INTEGER,
+    first_token_ms    INTEGER,
+    created_at        TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_request_logs_created_at ON request_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_request_logs_account_id ON request_logs(account_id);
@@ -109,6 +113,15 @@ func execSchema(db *sql.DB) error {
 			}
 			return fmt.Errorf("建表失败 (%s): %w", short, err)
 		}
+	}
+	// Migrate: add token columns to existing request_logs table.
+	for _, col := range []string{
+		"prompt_tokens INTEGER",
+		"completion_tokens INTEGER",
+		"total_tokens INTEGER",
+		"first_token_ms INTEGER",
+	} {
+		_, _ = db.Exec("ALTER TABLE request_logs ADD COLUMN " + col)
 	}
 	return nil
 }

@@ -95,8 +95,10 @@ func scanApiKeyRow(s scanner) (ApiKey, error) {
 func scanRequestLogRow(s scanner) (RequestLog, error) {
 	var l RequestLog
 	var model, errMsg sql.NullString
+	var promptTok, compTok, totalTok, firstTok sql.NullInt64
 	err := s.Scan(&l.ID, &l.ApiKeyID, &l.AccountID, &l.ApiKeyName, &l.AccountName,
-		&l.Method, &l.Path, &l.StatusCode, &l.DurationMs, &model, &errMsg, &l.CreatedAt)
+		&l.Method, &l.Path, &l.StatusCode, &l.DurationMs, &model, &errMsg,
+		&promptTok, &compTok, &totalTok, &firstTok, &l.CreatedAt)
 	if err != nil {
 		return RequestLog{}, err
 	}
@@ -108,6 +110,22 @@ func scanRequestLogRow(s scanner) (RequestLog, error) {
 		v := errMsg.String
 		l.Error = &v
 	}
+	if promptTok.Valid {
+		v := promptTok.Int64
+		l.PromptTokens = &v
+	}
+	if compTok.Valid {
+		v := compTok.Int64
+		l.CompletionTokens = &v
+	}
+	if totalTok.Valid {
+		v := totalTok.Int64
+		l.TotalTokens = &v
+	}
+	if firstTok.Valid {
+		v := firstTok.Int64
+		l.FirstTokenMs = &v
+	}
 	return l, nil
 }
 
@@ -117,6 +135,14 @@ func nullString(s *string) interface{} {
 		return nil
 	}
 	return *s
+}
+
+// nullInt64 converts *int64 to an interface{} suitable for SQL (nil → NULL).
+func nullInt64(v *int64) interface{} {
+	if v == nil {
+		return nil
+	}
+	return *v
 }
 
 // ─── Init / Load / Flush ─────────────────────────────────────────────────────
@@ -501,7 +527,7 @@ func GetLogs(page, limit int, accountID, apiKeyID string) LogsResult {
 	offset := (page - 1) * limit
 
 	countQuery := "SELECT COUNT(*) FROM request_logs WHERE 1=1"
-	dataQuery := `SELECT id, api_key_id, account_id, api_key_name, account_name, method, path, status_code, duration_ms, model, error, created_at FROM request_logs WHERE 1=1`
+	dataQuery := `SELECT id, api_key_id, account_id, api_key_name, account_name, method, path, status_code, duration_ms, model, error, prompt_tokens, completion_tokens, total_tokens, first_token_ms, created_at FROM request_logs WHERE 1=1`
 	args := []interface{}{}
 
 	if accountID != "" {
@@ -548,10 +574,12 @@ func GetLogs(page, limit int, accountID, apiKeyID string) LogsResult {
 func AppendLog(l RequestLog) {
 	s := globalState
 	_, err := s.db.Exec(
-		`INSERT INTO request_logs (id, api_key_id, account_id, api_key_name, account_name, method, path, status_code, duration_ms, model, error, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+		`INSERT INTO request_logs (id, api_key_id, account_id, api_key_name, account_name, method, path, status_code, duration_ms, model, error, prompt_tokens, completion_tokens, total_tokens, first_token_ms, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		l.ID, l.ApiKeyID, l.AccountID, l.ApiKeyName, l.AccountName,
 		l.Method, l.Path, l.StatusCode, l.DurationMs,
-		nullString(l.Model), nullString(l.Error), l.CreatedAt,
+		nullString(l.Model), nullString(l.Error),
+		nullInt64(l.PromptTokens), nullInt64(l.CompletionTokens), nullInt64(l.TotalTokens), nullInt64(l.FirstTokenMs),
+		l.CreatedAt,
 	)
 	if err != nil {
 		log.Printf("ERROR: 插入日志失败: %v", err)

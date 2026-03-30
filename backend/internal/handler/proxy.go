@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -15,6 +16,13 @@ import (
 )
 
 const maxBodySize = 100 * 1024 * 1024 // 100MB
+
+// usageInfo holds token usage extracted from the upstream response.
+type usageInfo struct {
+	PromptTokens     *int64 `json:"prompt_tokens"`
+	CompletionTokens *int64 `json:"completion_tokens"`
+	TotalTokens      *int64 `json:"total_tokens"`
+}
 
 // ProxyHandler holds the proxy-specific dependencies.
 type ProxyHandler struct {
@@ -96,8 +104,6 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Build upstream URL
 	baseURL := strings.TrimRight(account.APIURL, "/")
-	// r.URL.Path already includes /v1/..., account.APIURL might already have /v1 prefix
-	// We proxy /v1/* as-is to the upstream
 	upstreamURL := baseURL + r.URL.RequestURI()
 
 	// Build upstream request
@@ -111,7 +117,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	upstreamReq, err := http.NewRequestWithContext(ctx, r.Method, upstreamURL, bodyReader)
 	if err != nil {
-		h.logAndRecord(key, account, r, 502, time.Since(startTime), model, err.Error())
+		h.logAndRecord(key, account, r, 502, time.Since(startTime), model, nil, 0, err.Error())
 		writeError(w, http.StatusBadGateway, "Upstream service unavailable")
 		return
 	}
@@ -132,25 +138,30 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Execute upstream request
 	upstreamClient := &http.Client{
-		Timeout: 605 * time.Second, // slightly more than context timeout
+		Timeout: 605 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse // don't follow redirects
+			return http.ErrUseLastResponse
 		},
 	}
 	upstreamResp, err := upstreamClient.Do(upstreamReq)
 	if err != nil {
 		errMsg := err.Error()
 		log.Printf("INFO: Proxy upstream error for account %s: %v", account.ID, err)
-		go h.logAndRecord(key, account, r, 502, time.Since(startTime), model, errMsg)
+		h.logAndRecord(key, account, r, 502, time.Since(startTime), model, nil, 0, errMsg)
 		writeError(w, http.StatusBadGateway, "Upstream service unavailable")
 		return
 	}
 	defer upstreamResp.Body.Close()
 
-	durationMs := time.Since(startTime).Milliseconds()
+	// Measure first-byte latency (TTFB from upstream)
+	firstTokenMs := time.Since(startTime).Milliseconds()
 
-	// Async log (non-blocking)
-	go h.logAndRecord(key, account, r, upstreamResp.StatusCode, time.Duration(durationMs)*time.Millisecond, model, "")
+	// Determine if streaming response
+	isStreaming := strings.Contains(
+		strings.ToLower(upstreamResp.Header.Get("Content-Type")), "text/event-stream",
+	)
+
+	var usage *usageInfo
 
 	// Copy response headers (drop content-encoding to avoid double-decompression)
 	for k, vals := range upstreamResp.Header {
@@ -163,20 +174,103 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(upstreamResp.StatusCode)
 
-	// Stream response body with flush support
+	if isStreaming {
+		usage = h.streamAndCapture(w, upstreamResp.Body)
+	} else {
+		usage = h.bufferAndCapture(w, upstreamResp.Body)
+	}
+
+	// Update duration to include full response transfer
+	durationMs := time.Since(startTime).Milliseconds()
+
+	// Async log (non-blocking)
+	go h.logAndRecord(key, account, r, upstreamResp.StatusCode, time.Duration(durationMs)*time.Millisecond, model, usage, firstTokenMs, "")
+}
+
+// bufferAndCapture reads the full non-streaming response body, extracts usage, then writes to client.
+func (h *ProxyHandler) bufferAndCapture(w http.ResponseWriter, body io.Reader) *usageInfo {
+	bodyBytes, err := io.ReadAll(io.LimitReader(body, maxBodySize+1))
+	if err != nil {
+		_, _ = w.Write(bodyBytes) // write whatever we got
+		return nil
+	}
+
+	// Try to extract usage from JSON response
+	var usage usageInfo
+	if len(bodyBytes) > 0 && json.Unmarshal(bodyBytes, &struct {
+		Usage *usageInfo `json:"usage"`
+	}{Usage: &usage}) == nil && usage.TotalTokens != nil {
+		// usage extracted successfully
+	} else {
+		usage = usageInfo{}
+	}
+
+	_, _ = w.Write(bodyBytes)
+	return &usage
+}
+
+// streamAndCapture forwards SSE stream in real-time while scanning for usage data.
+func (h *ProxyHandler) streamAndCapture(w http.ResponseWriter, body io.Reader) *usageInfo {
 	flusher, canFlush := w.(http.Flusher)
 	buf := make([]byte, 32*1024)
+	var lineBuf bytes.Buffer
+	var capturedUsage *usageInfo
+
 	for {
-		n, readErr := upstreamResp.Body.Read(buf)
+		n, readErr := body.Read(buf)
 		if n > 0 {
 			_, _ = w.Write(buf[:n])
 			if canFlush {
 				flusher.Flush()
 			}
+
+			// Scan SSE data lines for usage
+			lineBuf.Write(buf[:n])
+			h.scanSSEForUsage(&lineBuf, &capturedUsage)
 		}
 		if readErr != nil {
 			break
 		}
+	}
+
+	// Process remaining buffer
+	if lineBuf.Len() > 0 {
+		h.extractUsageFromLine(lineBuf.String(), &capturedUsage)
+	}
+
+	return capturedUsage
+}
+
+// scanSSEForUsage processes buffered data looking for complete SSE lines containing usage.
+func (h *ProxyHandler) scanSSEForUsage(lineBuf *bytes.Buffer, capturedUsage **usageInfo) {
+	for {
+		line, err := lineBuf.ReadString('\n')
+		if err != nil {
+			// Not a complete line, put it back
+			lineBuf.WriteString(line)
+			return
+		}
+		h.extractUsageFromLine(strings.TrimRight(line, "\r\n"), capturedUsage)
+	}
+}
+
+// extractUsageFromLine checks a single SSE data line for usage info.
+func (h *ProxyHandler) extractUsageFromLine(line string, capturedUsage **usageInfo) {
+	// Only process lines like: data: {...}
+	trimmed := strings.TrimSpace(line)
+	if !strings.HasPrefix(trimmed, "data: ") {
+		return
+	}
+	data := trimmed[6:]
+	if !strings.Contains(data, `"usage"`) {
+		return
+	}
+	// Try to parse the JSON and extract usage
+	var wrapper struct {
+		Usage *usageInfo `json:"usage"`
+	}
+	if json.Unmarshal([]byte(data), &wrapper) == nil && wrapper.Usage != nil && wrapper.Usage.TotalTokens != nil {
+		*capturedUsage = wrapper.Usage
 	}
 }
 
@@ -187,6 +281,8 @@ func (h *ProxyHandler) logAndRecord(
 	statusCode int,
 	duration time.Duration,
 	model *string,
+	usage *usageInfo,
+	firstTokenMs int64,
 	errMsg string,
 ) {
 	store.IncrementKeyRequestCount(key.ID)
@@ -208,7 +304,13 @@ func (h *ProxyHandler) logAndRecord(
 		DurationMs:  duration.Milliseconds(),
 		Model:       model,
 		Error:       errPtr,
+		FirstTokenMs: &firstTokenMs,
 		CreatedAt:   nowISO(),
+	}
+	if usage != nil {
+		logEntry.PromptTokens = usage.PromptTokens
+		logEntry.CompletionTokens = usage.CompletionTokens
+		logEntry.TotalTokens = usage.TotalTokens
 	}
 	store.AppendLog(logEntry)
 }

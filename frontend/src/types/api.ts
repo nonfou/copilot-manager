@@ -41,6 +41,10 @@ export interface RequestLog {
   duration_ms: number
   model?: string
   error?: string
+  prompt_tokens?: number
+  completion_tokens?: number
+  total_tokens?: number
+  first_token_ms?: number
   created_at: string
 }
 

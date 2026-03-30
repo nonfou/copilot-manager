@@ -62,18 +62,22 @@ type ApiKey struct {
 
 // RequestLog represents a logged proxy request.
 type RequestLog struct {
-	ID         string  `json:"id"`
-	ApiKeyID   string  `json:"api_key_id"`
-	AccountID  string  `json:"account_id"`
-	ApiKeyName string  `json:"api_key_name"`
-	AccountName string `json:"account_name"`
-	Method     string  `json:"method"`
-	Path       string  `json:"path"`
-	StatusCode int     `json:"status_code"`
-	DurationMs int64   `json:"duration_ms"`
-	Model      *string `json:"model"`
-	Error      *string `json:"error"`
-	CreatedAt  string  `json:"created_at"`
+	ID               string  `json:"id"`
+	ApiKeyID         string  `json:"api_key_id"`
+	AccountID        string  `json:"account_id"`
+	ApiKeyName       string  `json:"api_key_name"`
+	AccountName      string  `json:"account_name"`
+	Method           string  `json:"method"`
+	Path             string  `json:"path"`
+	StatusCode       int     `json:"status_code"`
+	DurationMs       int64   `json:"duration_ms"`
+	Model            *string `json:"model"`
+	Error            *string `json:"error"`
+	PromptTokens     *int64  `json:"prompt_tokens"`
+	CompletionTokens *int64  `json:"completion_tokens"`
+	TotalTokens      *int64  `json:"total_tokens"`
+	FirstTokenMs     *int64  `json:"first_token_ms"`
+	CreatedAt        string  `json:"created_at"`
 }
 
 // AuthSession represents a GitHub Device Flow authentication session.
