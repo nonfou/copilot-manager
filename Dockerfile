@@ -14,13 +14,18 @@ RUN pnpm run build
 # ─── Stage 2: Build Go Backend ────────────────────────────────────────────────
 FROM golang:1.25-alpine AS go-builder
 
+RUN apk add --no-cache gcc musl-dev
+
 WORKDIR /app/backend
 
 COPY backend/go.mod backend/go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 
 COPY backend/ ./
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /app/copilot-manager ./cmd/server/
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w -linkmode external -extldflags '-static'" -o /app/copilot-manager ./cmd/server/
 
 # ─── Stage 3: Runtime ─────────────────────────────────────────────────────────
 FROM alpine:3.21
