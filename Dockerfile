@@ -11,35 +11,31 @@ RUN pnpm install --frozen-lockfile
 COPY frontend/ ./
 RUN pnpm run build
 
-# ─── Stage 2: Build Go Backend ────────────────────────────────────────────────
-FROM golang:1.25-alpine AS go-builder
+# ─── Stage 2: Build Java Backend ──────────────────────────────────────────────
+FROM maven:3.9-eclipse-temurin-21-alpine AS java-builder
 
-RUN apk add --no-cache gcc musl-dev
+WORKDIR /app/backend-java
 
-WORKDIR /app/backend
+COPY backend-java/pom.xml ./
+RUN mvn dependency:go-offline -q
 
-COPY backend/go.mod backend/go.sum ./
-RUN --mount=type=cache,target=/go/pkg/mod \
-    go mod download
-
-COPY backend/ ./
-RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w -linkmode external -extldflags '-static'" -o /app/copilot-manager ./cmd/server/
+COPY backend-java/src ./src
+RUN mvn clean package -DskipTests -q
 
 # ─── Stage 3: Runtime ─────────────────────────────────────────────────────────
-FROM alpine:3.21
+FROM eclipse-temurin:21-jre-alpine
 
 WORKDIR /app
 
-# CA certs for outbound HTTPS; tzdata for correct time zone
 RUN apk add --no-cache ca-certificates tzdata
 
-COPY --from=go-builder /app/copilot-manager ./
+COPY --from=java-builder /app/backend-java/target/copilot-manager.jar ./
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist/
 
 VOLUME ["/app/data"]
 
 EXPOSE 4242
 
-CMD ["./copilot-manager"]
+ENV JAVA_OPTS="-Xmx512m -Xms128m"
+
+CMD ["sh", "-c", "java $JAVA_OPTS -jar copilot-manager.jar"]

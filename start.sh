@@ -2,7 +2,7 @@
 set -e
 
 APP_NAME="copilot-manager"
-BINARY="./$APP_NAME"
+JAR="backend-java/target/copilot-manager.jar"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 cd "$SCRIPT_DIR"
@@ -46,10 +46,14 @@ echo "[info] 构建前端..."
 (cd frontend && pnpm install && pnpm run build)
 echo "[info] 前端构建完成"
 
-# ─── 构建 ─────────────────────────────────────────────────────────────────────
-echo "[info] 构建 Go 后端..."
-(cd backend && go build -ldflags="-s -w" -o "../$APP_NAME" ./cmd/server/)
-echo "[info] 构建完成"
+# ─── 构建 Java 后端 ───────────────────────────────────────────────────────────
+echo "[info] 构建 Java 后端..."
+(cd backend-java && mvn clean package -DskipTests -q)
+echo "[info] 构建完成：$JAR"
+
+# ─── 启动命令 ─────────────────────────────────────────────────────────────────
+JAVA_OPTS="${JAVA_OPTS:--Xmx512m -Xms128m}"
+START_CMD="java $JAVA_OPTS -jar $JAR --server.port=$PORT"
 
 # ─── 启动（优先 PM2，否则 nohup）─────────────────────────────────────────────
 if command -v pm2 &>/dev/null; then
@@ -57,7 +61,7 @@ if command -v pm2 &>/dev/null; then
     echo "[info] 检测到已有进程，执行 restart（端口 $PORT）..."
     PORT="$PORT" pm2 restart "$APP_NAME" --update-env
   else
-    PORT="$PORT" pm2 start "$BINARY" --name "$APP_NAME"
+    PORT="$PORT" pm2 start "$START_CMD" --name "$APP_NAME"
     pm2 save
   fi
   echo ""
@@ -66,7 +70,7 @@ if command -v pm2 &>/dev/null; then
   echo "[ok] 已通过 PM2 启动（端口 $PORT）：pm2 logs $APP_NAME"
 else
   # 无 PM2 则用 nohup 后台运行，日志写入 app.log
-  PORT="$PORT" nohup "$BINARY" > app.log 2>&1 &
+  PORT="$PORT" nohup $START_CMD > app.log 2>&1 &
   echo $! > app.pid
   echo "[ok] 已在后台启动（端口 $PORT），PID=$(cat app.pid)，日志：tail -f app.log"
 fi

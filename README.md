@@ -43,12 +43,17 @@ curl http://localhost:8080/v1/models
 
 ## 安装与启动
 
-### 1. 克隆并安装依赖
+### 前置依赖
+
+- **Java 21+**
+- **Maven 3.9+**
+- **Node.js 18+ + pnpm**（用于构建前端）
+
+### 1. 克隆仓库
 
 ```bash
 git clone https://github.com/nonfou/copilot-manager.git
 cd copilot-manager
-bun install
 ```
 
 ### 2. 配置环境变量
@@ -71,25 +76,61 @@ ENCRYPTION_KEY=<用下方命令生成>
 生成加密密钥：
 
 ```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+openssl rand -hex 32
 ```
 
-### 3. 启动
+### 3. 构建
 
 ```bash
-# 开发模式（热重载）
-bun run dev
+# 构建前端
+cd frontend && pnpm install && pnpm run build && cd ..
 
-# 生产模式
-bun run start
+# 构建 Java 后端
+cd backend-java && mvn clean package -DskipTests && cd ..
+```
 
-# 指定端口（默认 4242）
-bun run start -- --port 3000
+### 4. 启动
+
+```bash
+# 直接运行（自动读取当前目录的 .env）
+source .env
+java -jar backend-java/target/copilot-manager.jar
+
+# 或使用启动脚本（自动构建 + PM2/nohup 后台运行）
+./start.sh
 ```
 
 启动后访问 **http://localhost:4242/ui/** 进入管理界面。
 
-> 详细部署（PM2、反向代理）参见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+### 开发模式
+
+```bash
+# 后端（热重载，需要 spring-boot-devtools）
+cd backend-java && mvn spring-boot:run
+
+# 前端（Vite 开发服务器，代理 /api /v1 → localhost:4242）
+cd frontend && pnpm run dev
+```
+
+---
+
+## Docker 部署
+
+```bash
+# 构建镜像
+docker build -t copilot-manager .
+
+# 运行（配合 .env 文件）
+docker compose up -d
+
+# 查看日志
+docker compose logs -f
+```
+
+`docker-compose.yml` 说明：
+- 数据目录挂载到 `./data`（持久化数据库文件）
+- 环境变量从 `.env` 文件读取
+- 默认监听端口 `4242`，可在 `.env` 中通过 `PORT` 修改
 
 ---
 
@@ -176,16 +217,20 @@ curl http://localhost:4242/v1/chat/completions \
 |------|------|--------|
 | `ADMIN_USERNAME` | 初始管理员用户名 | — |
 | `ADMIN_PASSWORD` | 初始管理员密码 | — |
-| `ENCRYPTION_KEY` | 64 位 hex 加密密钥 | —（不加密） |
-| `RATE_LIMIT_PER_MINUTE` | 每个 Key 每分钟最大请求数，`0` 不限 | `300` |
-| `CORS_ALLOWED_ORIGINS` | 逗号分隔的 CORS 白名单，不设则允许所有 | — |
+| `ENCRYPTION_KEY` | 64 位 hex 加密密钥 | —（必填，否则启动失败） |
+| `DATA_DIR` | 数据库文件目录 | `data` |
 | `PORT` | 监听端口 | `4242` |
+| `RATE_LIMIT_PER_MINUTE` | 每个 Key 每分钟最大请求数，`0` 不限 | `300` |
+| `CORS_ALLOWED_ORIGINS` | 逗号分隔的 CORS 白名单 | —（不设则允许所有） |
+| `HTTPS` | Cookie Secure 属性（部署在 HTTPS 反向代理后设为 `true`） | `false` |
+| `TRUSTED_PROXY` | 信任 X-Forwarded-For 头（仅在反向代理可信时启用） | `false` |
+| `JAVA_OPTS` | JVM 启动参数 | `-Xmx512m -Xms128m` |
 
 ---
 
 ## 注意事项
 
 - **ENCRYPTION_KEY 一旦设置不可更改**，丢失后存储的 Token 和 Key 无法解密
-- 旧账号（无 `api_url` 字段）需进入编辑页面补填 copilot-api 地址
 - Session 存储在内存中，服务重启后需要重新登录
 - 代理转发时会去掉客户端的 `Authorization` 头，由 copilot-api 实例负责鉴权
+- SQLite 使用 WAL 模式，`DATA_DIR` 目录需有写权限
