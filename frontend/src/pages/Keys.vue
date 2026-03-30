@@ -124,13 +124,27 @@ async function createKey() {
   }
 }
 
-function copyRevealedKey() {
+async function copyRevealedKey() {
   if (!revealedKey.value) return
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(revealedKey.value)
+  try {
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(revealedKey.value)
+    } else {
+      const el = document.createElement('textarea')
+      el.value = revealedKey.value
+      el.style.position = 'fixed'
+      el.style.opacity = '0'
+      document.body.appendChild(el)
+      el.select()
+      const ok = document.execCommand('copy')
+      document.body.removeChild(el)
+      if (!ok) throw new Error('复制失败')
+    }
     message.success('已复制到剪贴板')
+    setTimeout(clearRevealedKey, 500)
+  } catch {
+    message.error('复制失败，请手动选中并复制')
   }
-  setTimeout(clearRevealedKey, 500)
 }
 
 // ─── Edit key ─────────────────────────────────────────────────────────────────
