@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, RouterView } from 'vue-router'
-import { NConfigProvider, darkTheme, type GlobalThemeOverrides } from 'naive-ui'
+import { NConfigProvider, NMessageProvider, darkTheme, type GlobalThemeOverrides } from 'naive-ui'
 import DefaultLayout from './layouts/DefaultLayout.vue'
 import AuthLayout from './layouts/AuthLayout.vue'
 
@@ -30,9 +30,11 @@ const themeOverrides: GlobalThemeOverrides = {
 
 <template>
   <NConfigProvider :theme="darkTheme" :theme-overrides="themeOverrides">
-    <component :is="layout">
-      <RouterView />
-    </component>
+    <NMessageProvider>
+      <component :is="layout">
+        <RouterView />
+      </component>
+    </NMessageProvider>
   </NConfigProvider>
 </template>
 

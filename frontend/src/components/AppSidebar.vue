@@ -8,41 +8,23 @@ import { useAuthStore } from '../stores/auth'
 const auth = useAuthStore()
 const router = useRouter()
 
+const isAdmin = computed(() => auth.user?.role === 'admin')
+
 function renderLabel(label: string, to: string) {
   return () => h(RouterLink, { to }, { default: () => label })
 }
 
-const menuOptions: MenuOption[] = [
-  {
-    label: renderLabel('仪表盘', '/dashboard'),
-    key: '/dashboard',
-    show: auth.user?.role === 'admin',
-  },
-  {
-    label: renderLabel('账号管理', '/accounts'),
-    key: '/accounts',
-    show: auth.user?.role === 'admin',
-  },
-  {
-    label: renderLabel('Key 管理', '/keys'),
-    key: '/keys',
-    show: auth.user?.role === 'admin',
-  },
-  {
-    label: renderLabel('Key 详情', '/key-detail'),
-    key: '/key-detail',
-  },
-  {
-    label: renderLabel('用户管理', '/users'),
-    key: '/users',
-    show: auth.user?.role === 'admin',
-  },
-  {
-    label: renderLabel('请求日志', '/logs'),
-    key: '/logs',
-    show: auth.user?.role === 'admin',
-  },
-]
+const menuOptions = computed<MenuOption[]>(() => {
+  const admin = isAdmin.value
+  return [
+    { label: renderLabel('仪表盘', '/dashboard'), key: '/dashboard', show: admin },
+    { label: renderLabel('账号管理', '/accounts'), key: '/accounts', show: admin },
+    { label: renderLabel('Key 管理', '/keys'), key: '/keys', show: admin },
+    { label: renderLabel('Key 详情', '/key-detail'), key: '/key-detail' },
+    { label: renderLabel('用户管理', '/users'), key: '/users', show: admin },
+    { label: renderLabel('请求日志', '/logs'), key: '/logs', show: admin },
+  ].filter(o => o.show !== false)
+})
 
 const activeKey = computed(() => router.currentRoute.value.path)
 
@@ -60,7 +42,7 @@ async function handleLogout() {
     </div>
 
     <NMenu
-      :options="menuOptions.filter(o => o.show !== false)"
+      :options="menuOptions"
       :value="activeKey"
       :indent="16"
       style="flex: 1;"
