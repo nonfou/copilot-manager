@@ -29,7 +29,29 @@ type usageInfo struct {
 
 func (u *usageInfo) hasData() bool {
 	return u.InputTokens != nil || u.OutputTokens != nil ||
-		u.PromptTokens != nil || u.CompletionTokens != nil
+		u.PromptTokens != nil || u.CompletionTokens != nil ||
+		u.TotalTokens != nil
+}
+
+func (u *usageInfo) merge(other *usageInfo) {
+	if other == nil {
+		return
+	}
+	if other.InputTokens != nil {
+		u.InputTokens = other.InputTokens
+	}
+	if other.OutputTokens != nil {
+		u.OutputTokens = other.OutputTokens
+	}
+	if other.PromptTokens != nil {
+		u.PromptTokens = other.PromptTokens
+	}
+	if other.CompletionTokens != nil {
+		u.CompletionTokens = other.CompletionTokens
+	}
+	if other.TotalTokens != nil {
+		u.TotalTokens = other.TotalTokens
+	}
 }
 
 // ProxyHandler holds the proxy-specific dependencies.
@@ -101,11 +123,15 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		ct := r.Header.Get("Content-Type")
 		if strings.Contains(ct, "application/json") && len(bodyBytes) > 0 {
-			var parsed struct {
-				Model string `json:"model"`
-			}
-			if err := json.Unmarshal(bodyBytes, &parsed); err == nil && parsed.Model != "" {
-				model = &parsed.Model
+			var mutated bool
+			bodyBytes, model, mutated = enrichStreamingUsageRequest(r.URL.Path, bodyBytes)
+			if !mutated && model == nil {
+				var parsed struct {
+					Model string `json:"model"`
+				}
+				if err := json.Unmarshal(bodyBytes, &parsed); err == nil && parsed.Model != "" {
+					model = &parsed.Model
+				}
 			}
 		}
 	}
@@ -205,15 +231,7 @@ func (h *ProxyHandler) bufferAndCapture(w http.ResponseWriter, body io.Reader) *
 	}
 
 	bodyBytes := capture.Bytes()
-
-	// Try to extract usage from JSON response
-	var usage usageInfo
-	if len(bodyBytes) > 0 && json.Unmarshal(bodyBytes, &struct {
-		Usage *usageInfo `json:"usage"`
-	}{Usage: &usage}) == nil && usage.hasData() {
-		return &usage
-	}
-	return nil
+	return parseUsagePayload(bodyBytes)
 }
 
 // streamAndCapture forwards SSE stream in real-time while scanning for usage data.
@@ -273,12 +291,104 @@ func (h *ProxyHandler) extractUsageFromLine(line string, capturedUsage **usageIn
 		return
 	}
 	// Try to parse the JSON and extract usage
+	usage := parseUsagePayload([]byte(data))
+	if usage != nil {
+		if *capturedUsage == nil {
+			*capturedUsage = usage
+			return
+		}
+		(*capturedUsage).merge(usage)
+	}
+}
+
+func enrichStreamingUsageRequest(path string, bodyBytes []byte) ([]byte, *string, bool) {
+	var payload map[string]interface{}
+	if err := json.Unmarshal(bodyBytes, &payload); err != nil {
+		return bodyBytes, nil, false
+	}
+
+	var model *string
+	if rawModel, ok := payload["model"].(string); ok && rawModel != "" {
+		model = &rawModel
+	}
+
+	if !strings.HasSuffix(path, "/chat/completions") {
+		return bodyBytes, model, false
+	}
+
+	stream, _ := payload["stream"].(bool)
+	if !stream {
+		return bodyBytes, model, false
+	}
+
+	streamOptions, hasStreamOptions := payload["stream_options"]
+	if !hasStreamOptions || streamOptions == nil {
+		payload["stream_options"] = map[string]interface{}{"include_usage": true}
+		updated, err := json.Marshal(payload)
+		if err != nil {
+			return bodyBytes, model, false
+		}
+		return updated, model, true
+	}
+
+	if optionsMap, ok := streamOptions.(map[string]interface{}); ok {
+		if _, exists := optionsMap["include_usage"]; !exists {
+			optionsMap["include_usage"] = true
+			payload["stream_options"] = optionsMap
+			updated, err := json.Marshal(payload)
+			if err != nil {
+				return bodyBytes, model, false
+			}
+			return updated, model, true
+		}
+	}
+
+	return bodyBytes, model, false
+}
+
+func parseUsagePayload(data []byte) *usageInfo {
+	if len(data) == 0 {
+		return nil
+	}
+
 	var wrapper struct {
-		Usage *usageInfo `json:"usage"`
+		Usage   *usageInfo `json:"usage"`
+		Message *struct {
+			Usage *usageInfo `json:"usage"`
+		} `json:"message"`
+		Delta *struct {
+			Usage *usageInfo `json:"usage"`
+		} `json:"delta"`
 	}
-	if json.Unmarshal([]byte(data), &wrapper) == nil && wrapper.Usage != nil && wrapper.Usage.hasData() {
-		*capturedUsage = wrapper.Usage
+	if err := json.Unmarshal(data, &wrapper); err != nil {
+		return nil
 	}
+
+	merged := &usageInfo{}
+	if wrapper.Usage != nil {
+		merged.merge(wrapper.Usage)
+	}
+	if wrapper.Message != nil && wrapper.Message.Usage != nil {
+		merged.merge(wrapper.Message.Usage)
+	}
+	if wrapper.Delta != nil && wrapper.Delta.Usage != nil {
+		merged.merge(wrapper.Delta.Usage)
+	}
+
+	if !merged.hasData() {
+		return nil
+	}
+
+	if merged.TotalTokens == nil {
+		promptTokens := coalesce(merged.InputTokens, merged.PromptTokens)
+		completionTokens := coalesce(merged.OutputTokens, merged.CompletionTokens)
+		if promptTokens != nil && completionTokens != nil {
+			total := *promptTokens + *completionTokens
+			merged.TotalTokens = &total
+		}
+	}
+
+	return merged
 }
 
 func (h *ProxyHandler) logAndRecord(
