@@ -24,7 +24,7 @@ public class SecurityHeadersFilter extends OncePerRequestFilter {
                                     FilterChain chain) throws ServletException, IOException {
         response.setHeader("X-Content-Type-Options", "nosniff");
         response.setHeader("X-Frame-Options", "SAMEORIGIN");
-        response.setHeader("Content-Security-Policy", "default-src 'self'");
+        response.setHeader("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'");
         response.setHeader("X-XSS-Protection", "1; mode=block");
         response.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
         chain.doFilter(request, response);
