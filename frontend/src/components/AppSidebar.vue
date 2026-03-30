@@ -14,31 +14,31 @@ function renderLabel(label: string, to: string) {
 
 const menuOptions: MenuOption[] = [
   {
-    label: renderLabel('仪表盘', '/ui/dashboard'),
+    label: renderLabel('仪表盘', '/dashboard'),
     key: '/dashboard',
     show: auth.user?.role === 'admin',
   },
   {
-    label: renderLabel('账号管理', '/ui/accounts'),
+    label: renderLabel('账号管理', '/accounts'),
     key: '/accounts',
     show: auth.user?.role === 'admin',
   },
   {
-    label: renderLabel('Key 管理', '/ui/keys'),
+    label: renderLabel('Key 管理', '/keys'),
     key: '/keys',
     show: auth.user?.role === 'admin',
   },
   {
-    label: renderLabel('Key 详情', '/ui/key-detail'),
+    label: renderLabel('Key 详情', '/key-detail'),
     key: '/key-detail',
   },
   {
-    label: renderLabel('用户管理', '/ui/users'),
+    label: renderLabel('用户管理', '/users'),
     key: '/users',
     show: auth.user?.role === 'admin',
   },
   {
-    label: renderLabel('请求日志', '/ui/logs'),
+    label: renderLabel('请求日志', '/logs'),
     key: '/logs',
     show: auth.user?.role === 'admin',
   },
