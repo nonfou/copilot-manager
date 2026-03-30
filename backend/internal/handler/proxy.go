@@ -18,10 +18,20 @@ import (
 const maxBodySize = 100 * 1024 * 1024 // 100MB
 
 // usageInfo holds token usage extracted from the upstream response.
+// Supports both Anthropic format (input_tokens/output_tokens) and OpenAI format (prompt_tokens/completion_tokens).
 type usageInfo struct {
+	// Anthropic format (copilot-api returns this)
+	InputTokens  *int64 `json:"input_tokens"`
+	OutputTokens *int64 `json:"output_tokens"`
+	// OpenAI format (fallback)
 	PromptTokens     *int64 `json:"prompt_tokens"`
 	CompletionTokens *int64 `json:"completion_tokens"`
 	TotalTokens      *int64 `json:"total_tokens"`
+}
+
+func (u *usageInfo) hasData() bool {
+	return u.InputTokens != nil || u.OutputTokens != nil ||
+		u.PromptTokens != nil || u.CompletionTokens != nil
 }
 
 // ProxyHandler holds the proxy-specific dependencies.
@@ -199,7 +209,7 @@ func (h *ProxyHandler) bufferAndCapture(w http.ResponseWriter, body io.Reader) *
 	var usage usageInfo
 	if len(bodyBytes) > 0 && json.Unmarshal(bodyBytes, &struct {
 		Usage *usageInfo `json:"usage"`
-	}{Usage: &usage}) == nil && usage.TotalTokens != nil {
+	}{Usage: &usage}) == nil && usage.hasData() {
 		// usage extracted successfully
 	} else {
 		usage = usageInfo{}
@@ -269,7 +279,7 @@ func (h *ProxyHandler) extractUsageFromLine(line string, capturedUsage **usageIn
 	var wrapper struct {
 		Usage *usageInfo `json:"usage"`
 	}
-	if json.Unmarshal([]byte(data), &wrapper) == nil && wrapper.Usage != nil && wrapper.Usage.TotalTokens != nil {
+	if json.Unmarshal([]byte(data), &wrapper) == nil && wrapper.Usage != nil && wrapper.Usage.hasData() {
 		*capturedUsage = wrapper.Usage
 	}
 }
@@ -308,9 +318,23 @@ func (h *ProxyHandler) logAndRecord(
 		CreatedAt:   nowISO(),
 	}
 	if usage != nil {
-		logEntry.PromptTokens = usage.PromptTokens
-		logEntry.CompletionTokens = usage.CompletionTokens
-		logEntry.TotalTokens = usage.TotalTokens
+		promptTokens := coalesce(usage.InputTokens, usage.PromptTokens)
+		completionTokens := coalesce(usage.OutputTokens, usage.CompletionTokens)
+		logEntry.PromptTokens = promptTokens
+		logEntry.CompletionTokens = completionTokens
+		if usage.TotalTokens != nil {
+			logEntry.TotalTokens = usage.TotalTokens
+		} else if promptTokens != nil && completionTokens != nil {
+			total := *promptTokens + *completionTokens
+			logEntry.TotalTokens = &total
+		}
 	}
 	store.AppendLog(logEntry)
+}
+
+func coalesce(a, b *int64) *int64 {
+	if a != nil {
+		return a
+	}
+	return b
 }

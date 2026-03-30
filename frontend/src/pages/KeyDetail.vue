@@ -162,6 +162,21 @@ const logColumns: DataTableColumns<RequestLog> = [
   { title: '方法', key: 'method', width: 70, render: (row) => h('code', {}, row.method) },
   { title: '模型', key: 'model', width: 130, render: (row) => h(NText, { depth: 3 }, () => row.model ?? '-') },
   {
+    title: 'Tokens',
+    key: 'tokens',
+    width: 160,
+    render: (row) => {
+      if (row.prompt_tokens == null && row.completion_tokens == null)
+        return h(NText, { depth: 3 }, () => '-')
+      const parts: string[] = []
+      if (row.prompt_tokens != null || row.completion_tokens != null)
+        parts.push(`in ${row.prompt_tokens ?? 0} / out ${row.completion_tokens ?? 0}`)
+      if (row.total_tokens != null)
+        parts.push(`total ${row.total_tokens}`)
+      return h('span', { style: 'font-size:12px; white-space:nowrap;' }, parts.join(' | '))
+    },
+  },
+  {
     title: '路径',
     key: 'path',
     ellipsis: { tooltip: true },
