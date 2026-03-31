@@ -25,6 +25,45 @@
 
 ---
 
+## 功能特性
+
+- **多账号管理** — 添加多个 copilot-api 实例，支持 GitHub OAuth 授权或直接粘贴 Token
+- **API Key 分发** — 创建、轮转、禁用 Key，关联到指定账号，格式兼容 OpenAI API
+- **反向代理** — 透明转发 `/v1/*` 请求，支持 SSE 流式响应，自动提取 Token 用量
+- **安全加固** — AES-256-GCM 静态加密、SSRF 防护、登录/代理双重限流、安全响应头
+- **轻量部署** — 纯 Go 单二进制（无 CGO）、SQLite 存储、无 Node.js 构建步骤，支持 Docker
+
+---
+
+## 项目结构
+
+```
+copilot-manager/
+├── backend/                    # Go 后端
+│   ├── cmd/server/main.go      # 入口
+│   └── internal/
+│       ├── config/             # 环境变量加载
+│       ├── crypto/             # AES-256-GCM 加密 + scrypt 密码哈希
+│       ├── handler/            # HTTP 处理器 + 路由
+│       ├── idgen/              # ID 生成（usr_/acc_/key_/log_ 前缀）
+│       ├── middleware/         # Auth / Admin / CORS / 安全头
+│       ├── ratelimit/          # 登录限流 + 代理限流
+│       ├── ssrf/               # API URL SSRF 防护
+│       └── store/              # GORM 数据层 + 内存 keyCache
+├── frontend/static/            # 原生静态前端（零依赖）
+│   ├── index.html
+│   ├── styles.css
+│   ├── app.js                  # 路由引导
+│   ├── common.js               # 共享工具与 API 客户端
+│   └── *.js                    # 各页面模块
+├── data/                       # SQLite 数据库（不提交）
+├── Dockerfile
+├── docker-compose.yml
+└── .env.example
+```
+
+---
+
 ## 前置条件
 
 需要先运行一个或多个 [copilot-api](https://github.com/ddddddeon/copilot-api) 实例：
@@ -221,9 +260,10 @@ curl http://localhost:4242/v1/chat/completions \
 | `DATA_DIR` | 数据库文件目录 | `data` |
 | `PORT` | 监听端口 | `4242` |
 | `RATE_LIMIT_PER_MINUTE` | 每个 Key 每分钟最大请求数，`0` 不限 | `300` |
-| `CORS_ALLOWED_ORIGINS` | 逗号分隔的 CORS 白名单 | —（不设则允许所有） |
+| `CORS_ALLOWED_ORIGINS` | 逗号分隔的 CORS 白名单；`NODE_ENV=production` 时未设则拒绝所有跨域 | — |
 | `HTTPS` | Cookie Secure 属性（部署在 HTTPS 反向代理后设为 `true`） | `false` |
 | `TRUSTED_PROXY` | 信任 X-Forwarded-For 头（仅在反向代理可信时启用） | `false` |
+| `NODE_ENV` | 设为 `production` 启用安全 Cookie + 严格 CORS（Docker 默认开启） | — |
 | `MAX_PROXY_BODY_SIZE` | 非流式代理请求体最大缓存，支持 `16MiB` 写法 | `16MiB` |
 | `LOG_RETENTION_COUNT` | 最多保留的请求日志条数 | `2000` |
 | `CACHE_TTL_SECONDS` | 账号 usage/models 缓存秒数 | `120` |
@@ -239,7 +279,3 @@ curl http://localhost:4242/v1/chat/completions \
 - 代理转发时会去掉客户端的 `Authorization` 头，由 copilot-api 实例负责鉴权
 - SQLite 使用 WAL 模式，`DATA_DIR` 目录需有写权限
 - 对于 2G 服务器，建议优先使用 Docker Compose 默认配置或保留 `GOMEMLIMIT=320MiB`
-
-
-
-
