@@ -1,8 +1,8 @@
-import { title, shell, head, api, table, esc, formatDate, toast, state, badge } from './common.js'
+import { title, shell, head, api, table, esc, formatDate, toast, state, badge, showConfirm, skeleton } from './common.js'
 
 export async function renderUsers() {
   title('用户管理')
-  shell('users', head('用户管理', '创建、删除用户并重置密码') + '<div class="card"><span class="loader"></span></div>')
+  shell('users', head('用户管理', '创建、删除用户并重置密码') + skeleton(6))
 
   const data = await api('/users')
   const users = data.users || []
@@ -47,30 +47,30 @@ export async function renderUsers() {
         ]
       )}
 
-      <section class="stats-grid">
+      <section class="stats-grid fade-in">
         <div class="card stat-card">
-          <h3>👥 全部用户</h3>
+          <h3>全部用户</h3>
           <div class="stat-value">${esc(users.length)}</div>
           <div class="stat-help">当前系统已创建的用户总数</div>
         </div>
         <div class="card stat-card">
-          <h3>🛡️ 管理员</h3>
+          <h3>管理员</h3>
           <div class="stat-value">${esc(adminCount)}</div>
           <div class="stat-help">拥有全局配置与管理权限</div>
         </div>
         <div class="card stat-card">
-          <h3>🙍 普通用户</h3>
+          <h3>普通用户</h3>
           <div class="stat-value">${esc(userCount)}</div>
           <div class="stat-help">通常仅访问自己的 Key 与详情页</div>
         </div>
         <div class="card stat-card">
-          <h3>🔐 已登录过</h3>
+          <h3>已登录过</h3>
           <div class="stat-value">${esc(loggedInCount)}</div>
           <div class="stat-help">至少存在一次成功登录记录</div>
         </div>
       </section>
 
-      <section class="card">
+      <section class="card fade-in">
         <div class="card-title">
           <h2>创建用户</h2>
         </div>
@@ -102,7 +102,7 @@ export async function renderUsers() {
       ${
         reset
           ? `
-            <section class="card">
+            <section class="card fade-in">
               <div class="card-title">
                 <h2>重置密码 - ${esc(reset.username)}</h2>
               </div>
@@ -120,7 +120,7 @@ export async function renderUsers() {
           : ''
       }
 
-      <section class="card">
+      <section class="card fade-in">
         <div class="card-title">
           <h2>用户列表</h2>
           <div class="toolbar-group">
@@ -200,7 +200,14 @@ export async function renderUsers() {
         return
       }
 
-      if (!confirm(`确认删除用户「${user.username}」？`)) return
+      const confirmed = await showConfirm({
+        title: '删除用户',
+        message: `确认删除用户「${user.username}」？`,
+        confirmText: '删除',
+        danger: true
+      })
+      if (!confirmed) return
+
       try {
         await api(`/users/${user.id}`, { method: 'DELETE' })
         state.users.resetUserId = ''

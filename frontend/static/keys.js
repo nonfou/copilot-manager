@@ -8,12 +8,14 @@ import {
   formatDate,
   toast,
   state,
-  badge
+  badge,
+  showConfirm,
+  skeleton
 } from './common.js'
 
 export async function renderKeys() {
   title('Key 管理')
-  shell('keys', head('Key 管理', '管理代理 Key 与归属账号') + '<div class="card"><span class="loader"></span></div>')
+  shell('keys', head('Key 管理', '管理代理 Key 与归属账号') + skeleton(6))
 
   const [accounts, keys, usersRes] = await Promise.all([
     api('/accounts'),
@@ -74,24 +76,24 @@ export async function renderKeys() {
         ]
       )}
 
-      <section class="stats-grid">
+      <section class="stats-grid fade-in">
         <div class="card stat-card">
-          <h3>🔑 全部 Key</h3>
+          <h3>全部 Key</h3>
           <div class="stat-value">${esc(keys.length)}</div>
           <div class="stat-help">当前筛选条件下的 Key 数量</div>
         </div>
         <div class="card stat-card">
-          <h3>✅ 已启用</h3>
+          <h3>已启用</h3>
           <div class="stat-value">${esc(enabledCount)}</div>
           <div class="stat-help">可直接用于代理调用</div>
         </div>
         <div class="card stat-card">
-          <h3>⛔ 已禁用</h3>
+          <h3>已禁用</h3>
           <div class="stat-value">${esc(disabledCount)}</div>
           <div class="stat-help">可在编辑表单中重新启用</div>
         </div>
         <div class="card stat-card">
-          <h3>📬 已使用</h3>
+          <h3>已使用</h3>
           <div class="stat-value">${esc(usedCount)}</div>
           <div class="stat-help">至少产生过一次代理请求</div>
         </div>
@@ -100,7 +102,7 @@ export async function renderKeys() {
       ${
         state.keys.revealedKey
           ? `
-            <section class="card">
+            <section class="card fade-in">
               <div class="card-title">
                 <h2>新生成的 Key</h2>
                 <button id="hide-key" class="btn small">隐藏</button>
@@ -117,7 +119,7 @@ export async function renderKeys() {
           : ''
       }
 
-      <section class="card">
+      <section class="card fade-in">
         <div class="card-title">
           <h2>创建 Key</h2>
         </div>
@@ -144,7 +146,9 @@ export async function renderKeys() {
                   </div>
                 </div>
                 <div class="form-actions">
-                  <button class="btn primary">创建 Key</button>
+                  <button type="submit" class="btn primary">
+                    <span class="btn-text">创建 Key</span>
+                  </button>
                 </div>
               </form>
             `
@@ -155,7 +159,7 @@ export async function renderKeys() {
       ${
         edit
           ? `
-            <section class="card">
+            <section class="card fade-in">
               <div class="card-title">
                 <h2>编辑 Key</h2>
               </div>
@@ -176,7 +180,7 @@ export async function renderKeys() {
                 </div>
                 <div class="form-actions">
                   <button id="key-edit-cancel" type="button" class="btn">取消</button>
-                  <button class="btn primary">保存修改</button>
+                  <button type="submit" class="btn primary">保存修改</button>
                 </div>
               </form>
             </section>
@@ -184,11 +188,11 @@ export async function renderKeys() {
           : ''
       }
 
-      <section class="card">
+      <section class="card fade-in">
         <div class="card-title">
           <h2>Key 列表</h2>
           <div class="toolbar-group">
-            <select id="key-filter" class="select" style="width:220px;">${filterOptions}</select>
+            <select id="key-filter" class="select" style="width:200px;">${filterOptions}</select>
             <button id="keys-refresh" class="btn small">刷新</button>
           </div>
         </div>
@@ -222,8 +226,12 @@ export async function renderKeys() {
     }
   }
 
-  if (document.getElementById('key-create-form')) {
-    document.getElementById('key-create-form').onsubmit = async (event) => {
+  const createForm = document.getElementById('key-create-form')
+  if (createForm) {
+    const createBtn = createForm.querySelector('button[type="submit"]')
+    const btnText = createBtn.querySelector('.btn-text')
+
+    createForm.onsubmit = async (event) => {
       event.preventDefault()
       const form = new FormData(event.currentTarget)
       const payload = {
@@ -239,6 +247,9 @@ export async function renderKeys() {
 
       if (ownerId) payload.owner_id = ownerId
 
+      createBtn.disabled = true
+      btnText.innerHTML = '<span class="loader"></span>'
+
       try {
         const data = await api('/keys', { method: 'POST', body: JSON.stringify(payload) })
         state.keys.revealedKey = data.key || ''
@@ -246,6 +257,9 @@ export async function renderKeys() {
         await renderKeys()
       } catch (error) {
         toast(error.message, 'error')
+      } finally {
+        createBtn.disabled = false
+        btnText.textContent = '创建 Key'
       }
     }
   }
@@ -299,7 +313,14 @@ export async function renderKeys() {
       }
 
       if (action === 'regen') {
-        if (!confirm(`确认重新生成 Key「${key.name}」？旧 Key 将立即失效。`)) return
+        const confirmed = await showConfirm({
+          title: '重新生成 Key',
+          message: `确认重新生成 Key「${key.name}」？旧 Key 将立即失效。`,
+          confirmText: '重新生成',
+          danger: true
+        })
+        if (!confirmed) return
+
         try {
           const data = await api(`/keys/${key.id}/regenerate`, { method: 'POST' })
           state.keys.revealedKey = data.key || ''
@@ -311,7 +332,14 @@ export async function renderKeys() {
       }
 
       if (action === 'delete') {
-        if (!confirm(`确认删除 Key「${key.name}」？`)) return
+        const confirmed = await showConfirm({
+          title: '删除 Key',
+          message: `确认删除 Key「${key.name}」？此操作不可撤销。`,
+          confirmText: '删除',
+          danger: true
+        })
+        if (!confirmed) return
+
         try {
           await api(`/keys/${key.id}`, { method: 'DELETE' })
           state.keys.editId = ''

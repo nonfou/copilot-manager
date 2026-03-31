@@ -11,12 +11,14 @@ import {
   codeBadge,
   state,
   usageText,
-  badge
+  badge,
+  skeleton,
+  accountTypeBadge
 } from './common.js'
 
 export async function renderKeyDetail() {
   title('Key 详情')
-  shell('key-detail', head('Key 详情', '查看单个 Key 的关联账号、模型与请求日志') + '<div class="card"><span class="loader"></span></div>')
+  shell('key-detail', head('Key 详情', '查看单个 Key 的关联账号、模型与请求日志') + skeleton(8))
 
   const hash = location.hash.split('?')[1] || ''
   const query = new URLSearchParams(hash)
@@ -94,7 +96,7 @@ export async function renderKeyDetail() {
         'Key 详情',
         '查看单个 Key 的关联账号、模型与请求日志',
         `
-          <select id="detail-select" class="select" style="width:220px;">${options}</select>
+          <select id="detail-select" class="select" style="width:200px;">${options}</select>
           ${query.get('id') && state.user.role === 'admin' ? '<button id="detail-back" class="btn">返回</button>' : ''}
         `,
         [
@@ -105,30 +107,30 @@ export async function renderKeyDetail() {
         ]
       )}
 
-      <section class="stats-grid">
+      <section class="stats-grid fade-in">
         <div class="card stat-card">
-          <h3>📊 请求总数</h3>
+          <h3>请求总数</h3>
           <div class="stat-value">${esc(key.request_count ?? 0)}</div>
           <div class="stat-help">当前 Key 累计产生的代理请求数</div>
         </div>
         <div class="card stat-card">
-          <h3>✅ 当前页成功</h3>
+          <h3>当前页成功</h3>
           <div class="stat-value">${esc(successCount)}</div>
           <div class="stat-help">当前页日志中状态码小于 300 的请求数</div>
         </div>
         <div class="card stat-card">
-          <h3>⚠️ 当前页错误</h3>
+          <h3>当前页错误</h3>
           <div class="stat-value">${esc(errorCount)}</div>
           <div class="stat-help">当前页日志中状态码大于等于 400 的请求数</div>
         </div>
         <div class="card stat-card">
-          <h3>⏱️ 平均耗时</h3>
+          <h3>平均耗时</h3>
           <div class="stat-value">${esc(formatMs(avgDuration))}</div>
           <div class="stat-help">按当前页日志估算的平均响应耗时</div>
         </div>
       </section>
 
-      <section class="card detail-hero">
+      <section class="card detail-hero fade-in">
         <div class="detail-hero-main">
           <div class="detail-title-row">
             <div>
@@ -157,7 +159,7 @@ export async function renderKeyDetail() {
         </div>
       </section>
 
-      <section class="grid-3">
+      <section class="grid-3 fade-in">
         <div class="card">
           <div class="card-title">
             <h2>Key 信息</h2>
@@ -180,7 +182,7 @@ export async function renderKeyDetail() {
               ? `
                 <div class="kv-list">
                   <div class="kv-row"><div class="key">名称</div><div>${esc(key.account.name)}</div></div>
-                  <div class="kv-row"><div class="key">类型</div><div>${esc(key.account.account_type)}</div></div>
+                  <div class="kv-row"><div class="key">类型</div><div>${accountTypeBadge(key.account.account_type)}</div></div>
                   <div class="kv-row"><div class="key">API 地址</div><div class="mono small">${esc(key.account.api_url)}</div></div>
                   <div class="kv-row"><div class="key">配额</div><div>${usageText(usage)}</div></div>
                 </div>
@@ -196,12 +198,13 @@ export async function renderKeyDetail() {
           ${
             models.length
               ? `
-                <div class="details-box">
+                <div class="soft-list">
                   ${models
                     .map(
                       (item) => `
-                        <div class="mono small detail-model-item">
-                          ${esc(item.id)}${item.display_name ? ` <span class="muted">(${esc(item.display_name)})</span>` : ''}
+                        <div class="soft-item">
+                          <span class="mono small">${esc(item.id)}</span>
+                          ${item.display_name ? `<span class="muted">${esc(item.display_name)}</span>` : ''}
                         </div>
                       `
                     )
@@ -213,7 +216,7 @@ export async function renderKeyDetail() {
         </div>
       </section>
 
-      <section class="card">
+      <section class="card fade-in">
         <div class="card-title">
           <h2>请求日志</h2>
           <div class="toolbar-group">

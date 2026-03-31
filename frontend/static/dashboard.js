@@ -10,12 +10,13 @@ import {
   formatTokens,
   codeBadge,
   badge,
-  state
+  state,
+  skeleton
 } from './common.js'
 
 export async function renderDashboard() {
   title('仪表盘')
-  shell('dashboard', head('仪表盘', '系统整体运行状态概览') + '<div class="card"><span class="loader"></span></div>')
+  shell('dashboard', head('仪表盘', '系统整体运行状态概览') + skeleton(8))
 
   const [stats, logsRes] = await Promise.all([api('/stats'), api('/logs?limit=20')])
   const logs = logsRes.logs || []
@@ -57,30 +58,30 @@ export async function renderDashboard() {
         ]
       )}
 
-      <section class="stats-grid">
+      <section class="stats-grid fade-in">
         <div class="card stat-card">
-          <h3>📦 账号总数</h3>
+          <h3>账号总数</h3>
           <div class="stat-value">${esc(stats.total_accounts ?? '-')}</div>
           <div class="stat-help">当前托管的 copilot-api 账号数</div>
         </div>
         <div class="card stat-card">
-          <h3>🔑 启用 Key</h3>
+          <h3>启用 Key</h3>
           <div class="stat-value">${esc(stats.enabled_keys ?? '-')}</div>
           <div class="stat-help">可直接用于代理调用的 Key 数量</div>
         </div>
         <div class="card stat-card">
-          <h3>📈 今日请求</h3>
+          <h3>今日请求</h3>
           <div class="stat-value">${esc(stats.today_requests ?? '-')}</div>
           <div class="stat-help">按日志统计的今日代理请求</div>
         </div>
         <div class="card stat-card">
-          <h3>🧾 历史总请求</h3>
+          <h3>历史总请求</h3>
           <div class="stat-value">${esc(stats.total_requests ?? '-')}</div>
           <div class="stat-help">累计记录到日志的请求总数</div>
         </div>
       </section>
 
-      <section class="insight-grid">
+      <section class="insight-grid fade-in">
         <div class="soft-card">
           <h3>请求健康度</h3>
           <div class="soft-list">
@@ -108,7 +109,7 @@ export async function renderDashboard() {
         </div>
       </section>
 
-      <section class="card">
+      <section class="card fade-in">
         <div class="card-title">
           <h2>最近请求</h2>
           <div class="metric-row">

@@ -10,7 +10,9 @@ import {
   state,
   usageText,
   stopOAuth,
-  accountTypeBadge
+  accountTypeBadge,
+  showConfirm,
+  skeleton
 } from './common.js'
 
 async function loadData() {
@@ -267,7 +269,7 @@ async function loadModels(account) {
 
 export async function renderAccounts() {
   title('账号管理')
-  shell('accounts', head('账号管理', '管理 copilot-api 账号与授权方式') + '<div class="card"><span class="loader"></span></div>')
+  shell('accounts', head('账号管理', '管理 copilot-api 账号与授权方式') + skeleton(6))
 
   const { accounts, usageMap } = await loadData()
   const edit = accounts.find((item) => item.id === state.accounts.editId)
@@ -316,24 +318,24 @@ export async function renderAccounts() {
         ]
       )}
 
-      <section class="stats-grid">
+      <section class="stats-grid fade-in">
         <div class="card stat-card">
-          <h3>📦 全部账号</h3>
+          <h3>全部账号</h3>
           <div class="stat-value">${esc(accounts.length)}</div>
           <div class="stat-help">当前系统已接入的账号总数</div>
         </div>
         <div class="card stat-card">
-          <h3>🙋 个人版</h3>
+          <h3>个人版</h3>
           <div class="stat-value">${esc(individualCount)}</div>
           <div class="stat-help">适合个人开发与轻量使用</div>
         </div>
         <div class="card stat-card">
-          <h3>🏢 商业版</h3>
+          <h3>商业版</h3>
           <div class="stat-value">${esc(businessCount)}</div>
           <div class="stat-help">适合团队内部共享场景</div>
         </div>
         <div class="card stat-card">
-          <h3>🛡️ 企业版</h3>
+          <h3>企业版</h3>
           <div class="stat-value">${esc(enterpriseCount)}</div>
           <div class="stat-help">适合有统一治理要求的环境</div>
         </div>
@@ -502,7 +504,13 @@ export async function renderAccounts() {
       }
 
       if (action === 'delete') {
-        if (!confirm(`确认删除账号「${account.name}」？关联 Key 也会一并删除。`)) return
+        const confirmed = await showConfirm({
+          title: '删除账号',
+          message: `确认删除账号「${account.name}」？关联 Key 也会一并删除。`,
+          confirmText: '删除',
+          danger: true
+        })
+        if (!confirmed) return
         try {
           await api(`/accounts/${account.id}`, { method: 'DELETE' })
           if (state.accounts.models?.accountId === account.id) state.accounts.models = null

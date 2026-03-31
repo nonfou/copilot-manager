@@ -23,6 +23,24 @@ export const state = {
   users: { resetUserId: '' }
 }
 
+// SVG icons for navigation (Linear style)
+const icons = {
+  dashboard: `<svg viewBox="0 0 24 24"><path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z"/></svg>`,
+  accounts: `<svg viewBox="0 0 24 24"><circle cx="12" cy="7" r="4"/><path d="M5.5 21a7.5 7.5 0 0 1 13 0"/></svg>`,
+  keys: `<svg viewBox="0 0 24 24"><path d="M21 2l-6 6-3-3-6 6 3 3 6-6 6 6V2zM3 14l6 6 3-3-6-6-3 3z"/></svg>`,
+  'key-detail': `<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 2l5 5h-5V4zm-3 10h2v6h-2v-6z"/></svg>`,
+  logs: `<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zM6 20V4h7v5h5v11H6zm2-4h8v2H8v-2zm0-4h8v2H8v-2zm0-4h5v2H8V8z"/></svg>`,
+  users: `<svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`
+}
+
+// Toast icons
+const toastIcons = {
+  success: `<svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>`,
+  error: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>`,
+  warning: `<svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"/></svg>`,
+  info: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>`
+}
+
 export const esc = (value) =>
   String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -38,7 +56,7 @@ export function title(text) {
 export function toast(message, type = 'info') {
   const el = document.createElement('div')
   el.className = `toast ${type}`
-  el.textContent = message
+  el.innerHTML = `<span class="toast-icon">${toastIcons[type] || toastIcons.info}</span><span>${esc(message)}</span>`
   toastBox.appendChild(el)
   setTimeout(() => el.remove(), 3200)
 }
@@ -179,16 +197,75 @@ export function stopOAuth() {
   }
 }
 
+// Custom confirm dialog (replaces native window.confirm())
+export async function showConfirm({ title = '确认操作', message, confirmText = '确认', danger = false }) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div')
+    overlay.className = 'confirm-overlay'
+    overlay.innerHTML = `
+      <div class="confirm-box">
+        <h3>${esc(title)}</h3>
+        <p>${esc(message)}</p>
+        <div class="confirm-actions">
+          <button class="btn cancel-btn">取消</button>
+          <button class="btn ${danger ? 'danger' : 'primary'} confirm-btn">${esc(confirmText)}</button>
+        </div>
+      </div>
+    `
+    document.body.appendChild(overlay)
+
+    const close = (result) => {
+      overlay.remove()
+      resolve(result)
+    }
+
+    overlay.querySelector('.cancel-btn').onclick = () => close(false)
+    overlay.querySelector('.confirm-btn').onclick = () => close(true)
+    overlay.onclick = (e) => {
+      if (e.target === overlay) close(false)
+    }
+
+    const handleKey = (e) => {
+      if (e.key === 'Escape') {
+        close(false)
+        document.removeEventListener('keydown', handleKey)
+      }
+    }
+    document.addEventListener('keydown', handleKey)
+
+    // Auto-focus confirm button
+    overlay.querySelector('.confirm-btn').focus()
+  })
+}
+
+// Skeleton screen helper
+export const skeleton = (lines = 4) => {
+  const blocks = Array.from({ length: lines }, (_, i) => {
+    const widthClass = i === 0 ? 'short' : (i === lines - 1 ? 'medium' : '')
+    return `<div class="skeleton-block ${widthClass}"></div>`
+  }).join('')
+  return `<div class="card skeleton-wrap">${blocks}</div>`
+}
+
+// Empty state component
+export const emptyState = (message, cta = '') => `
+  <div class="empty-state">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+    <h3>${esc(message)}</h3>
+    ${cta}
+  </div>
+`
+
 const navConfig = {
   admin: [
-    ['dashboard', '仪表盘', '📊'],
-    ['accounts', '账号管理', '👤'],
-    ['keys', 'Key 管理', '🔑'],
-    ['key-detail', 'Key 详情', '🧾'],
-    ['logs', '请求日志', '📜'],
-    ['users', '用户管理', '🛡️']
+    ['dashboard', '仪表盘', 'dashboard'],
+    ['accounts', '账号管理', 'accounts'],
+    ['keys', 'Key 管理', 'keys'],
+    ['key-detail', 'Key 详情', 'key-detail'],
+    ['logs', '请求日志', 'logs'],
+    ['users', '用户管理', 'users']
   ],
-  user: [['key-detail', 'Key 详情', '🧾']]
+  user: [['key-detail', 'Key 详情', 'key-detail']]
 }
 
 export function shell(route, content) {
@@ -197,9 +274,9 @@ export function shell(route, content) {
   const navItems = admin ? navConfig.admin : navConfig.user
   const nav = navItems
     .map(
-      ([name, label, icon]) => `
+      ([name, label, iconKey]) => `
         <a class="nav-link ${route === name ? 'active' : ''}" href="#/${name}">
-          <span class="nav-icon">${icon}</span>
+          <span class="nav-icon">${icons[iconKey]}</span>
           <span>${label}</span>
         </a>
       `
@@ -211,10 +288,10 @@ export function shell(route, content) {
       <aside class="sidebar">
         <div class="sidebar-scroll">
           <div class="brand">
-            <div class="brand-logo">🤖</div>
+            <div class="brand-logo">⚡</div>
             <div>
               <div class="brand-title">Copilot Manager</div>
-              <div class="brand-subtitle">零依赖管理台 · 静态前端</div>
+              <div class="brand-subtitle">轻量管理台</div>
             </div>
           </div>
 
@@ -225,18 +302,18 @@ export function shell(route, content) {
               <div class="row" style="justify-content:space-between;align-items:flex-start;">
                 <div>
                   <div><strong>${esc(state.user?.username || '-')}</strong></div>
-                  <div class="muted small">当前登录账户</div>
+                  <div class="muted small">当前登录</div>
                 </div>
                 <span class="badge ${admin ? 'warning' : 'info'}">${esc(roleText)}</span>
               </div>
               <div class="user-meta">
                 <div class="user-meta-item">
                   <span>访问范围</span>
-                  <strong>${admin ? '全局管理' : '仅我的 Key'}</strong>
+                  <strong>${admin ? '全局管理' : '我的 Key'}</strong>
                 </div>
                 <div class="user-meta-item">
-                  <span>界面风格</span>
-                  <strong>深色控制台</strong>
+                  <span>界面</span>
+                  <strong>深色模式</strong>
                 </div>
               </div>
             </div>
@@ -246,7 +323,7 @@ export function shell(route, content) {
       </aside>
 
       <main class="main">
-        <div class="main-inner">${content}</div>
+        <div class="main-inner fade-in">${content}</div>
       </main>
     </div>
   `
@@ -282,7 +359,7 @@ export const head = (heading, description, actions = '', meta = []) => `
   </div>
 `
 
-export const table = (headers, rows, empty = '暂无数据') =>
+export const table = (headers, rows, emptyMsg = '暂无数据') =>
   rows.length
     ? `
       <div class="table-wrap">
@@ -294,7 +371,7 @@ export const table = (headers, rows, empty = '暂无数据') =>
         </table>
       </div>
     `
-    : `<div class="empty">${esc(empty)}</div>`
+    : emptyState(emptyMsg)
 
 export const badge = (status) => {
   const map = {
