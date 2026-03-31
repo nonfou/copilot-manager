@@ -1,4 +1,118 @@
-import { title, shell, head, api, table, esc, formatDate, toast, state, badge, showConfirm, skeleton } from './common.js'
+import {
+  title,
+  shell,
+  head,
+  api,
+  table,
+  esc,
+  formatDate,
+  toast,
+  state,
+  badge,
+  showConfirm,
+  showModal,
+  closeModal,
+  skeleton
+} from './common.js'
+
+function createFormHtml() {
+  return `
+    <div class="inline-note">建议为管理员设置更强密码，并定期重置长期未使用账号的凭据。</div>
+    <form id="user-create-form">
+      <div class="form-grid">
+        <div>
+          <label class="label">用户名</label>
+          <input class="input" name="username" placeholder="至少 3 个字符" />
+        </div>
+        <div>
+          <label class="label">密码</label>
+          <input class="input" type="password" name="password" placeholder="至少 6 个字符" />
+        </div>
+        <div>
+          <label class="label">角色</label>
+          <select class="select" name="role">
+            <option value="user">普通用户</option>
+            <option value="admin">管理员</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn primary">创建用户</button>
+      </div>
+    </form>
+  `
+}
+
+function resetPasswordHtml(user) {
+  return `
+    <form id="user-reset-form">
+      <input type="hidden" name="id" value="${esc(user.id)}" />
+      <label class="label">新密码</label>
+      <input class="input" type="password" name="password" placeholder="请输入新的登录密码" />
+      <div class="form-actions">
+        <button type="submit" class="btn primary">确认重置</button>
+      </div>
+    </form>
+  `
+}
+
+function bindCreateModal() {
+  const form = document.getElementById('user-create-form')
+  if (!form) return
+
+  form.onsubmit = async (event) => {
+    event.preventDefault()
+    const formData = new FormData(event.currentTarget)
+    const payload = {
+      username: String(formData.get('username') || '').trim(),
+      password: String(formData.get('password') || ''),
+      role: String(formData.get('role') || 'user')
+    }
+
+    if (payload.username.length < 3 || payload.password.length < 6) {
+      toast('用户名至少 3 个字符，密码至少 6 个字符', 'warning')
+      return
+    }
+
+    try {
+      await api('/users', { method: 'POST', body: JSON.stringify(payload) })
+      closeModal()
+      toast('用户已创建', 'success')
+      await renderUsers()
+    } catch (error) {
+      toast(error.message, 'error')
+    }
+  }
+}
+
+function bindResetModal() {
+  const form = document.getElementById('user-reset-form')
+  if (!form) return
+
+  form.onsubmit = async (event) => {
+    event.preventDefault()
+    const formData = new FormData(event.currentTarget)
+    const id = String(formData.get('id') || '')
+    const password = String(formData.get('password') || '')
+
+    if (password.length < 6) {
+      toast('密码至少 6 个字符', 'warning')
+      return
+    }
+
+    try {
+      await api(`/users/${id}/reset-password`, {
+        method: 'POST',
+        body: JSON.stringify({ new_password: password })
+      })
+      closeModal()
+      toast('密码已重置', 'success')
+      await renderUsers()
+    } catch (error) {
+      toast(error.message, 'error')
+    }
+  }
+}
 
 export async function renderUsers() {
   title('用户管理')
@@ -7,7 +121,6 @@ export async function renderUsers() {
   const data = await api('/users')
   const users = data.users || []
   const selfId = data.current_user?.id || ''
-  const reset = users.find((item) => item.id === state.users.resetUserId)
   const adminCount = users.filter((item) => item.role === 'admin').length
   const userCount = users.filter((item) => item.role === 'user').length
   const loggedInCount = users.filter((item) => item.last_login_at).length
@@ -38,7 +151,7 @@ export async function renderUsers() {
       ${head(
         '用户管理',
         '创建、删除用户并重置密码',
-        '',
+        '<button id="btn-create-user" class="btn primary">新增用户</button>',
         [
           `用户总数：${users.length}`,
           `管理员：${adminCount}`,
@@ -72,56 +185,6 @@ export async function renderUsers() {
 
       <section class="card fade-in">
         <div class="card-title">
-          <h2>创建用户</h2>
-        </div>
-        <div class="inline-note">建议为管理员设置更强密码，并定期重置长期未使用账号的凭据。</div>
-        <form id="user-create-form">
-          <div class="form-grid">
-            <div>
-              <label class="label">用户名</label>
-              <input class="input" name="username" placeholder="至少 3 个字符" />
-            </div>
-            <div>
-              <label class="label">密码</label>
-              <input class="input" type="password" name="password" placeholder="至少 6 个字符" />
-            </div>
-            <div>
-              <label class="label">角色</label>
-              <select class="select" name="role">
-                <option value="user">普通用户</option>
-                <option value="admin">管理员</option>
-              </select>
-            </div>
-          </div>
-          <div class="form-actions">
-            <button class="btn primary">创建用户</button>
-          </div>
-        </form>
-      </section>
-
-      ${
-        reset
-          ? `
-            <section class="card fade-in">
-              <div class="card-title">
-                <h2>重置密码 - ${esc(reset.username)}</h2>
-              </div>
-              <form id="user-reset-form">
-                <input type="hidden" name="id" value="${esc(reset.id)}" />
-                <label class="label">新密码</label>
-                <input class="input" type="password" name="password" placeholder="请输入新的登录密码" />
-                <div class="form-actions">
-                  <button id="user-reset-cancel" type="button" class="btn">取消</button>
-                  <button class="btn primary">确认重置</button>
-                </div>
-              </form>
-            </section>
-          `
-          : ''
-      }
-
-      <section class="card fade-in">
-        <div class="card-title">
           <h2>用户列表</h2>
           <div class="toolbar-group">
             <span class="metric-pill">当前会话：${esc(data.current_user?.username || '-')}</span>
@@ -133,70 +196,23 @@ export async function renderUsers() {
     `
   )
 
+  // Create user button
+  document.getElementById('btn-create-user').onclick = () => {
+    showModal({ title: '新增用户', body: createFormHtml() })
+    bindCreateModal()
+  }
+
   document.getElementById('users-refresh').onclick = () => renderUsers()
 
-  document.getElementById('user-create-form').onsubmit = async (event) => {
-    event.preventDefault()
-    const form = new FormData(event.currentTarget)
-    const payload = {
-      username: String(form.get('username') || '').trim(),
-      password: String(form.get('password') || ''),
-      role: String(form.get('role') || 'user')
-    }
-
-    if (payload.username.length < 3 || payload.password.length < 6) {
-      toast('用户名至少 3 个字符，密码至少 6 个字符', 'warning')
-      return
-    }
-
-    try {
-      await api('/users', { method: 'POST', body: JSON.stringify(payload) })
-      toast('用户已创建', 'success')
-      await renderUsers()
-    } catch (error) {
-      toast(error.message, 'error')
-    }
-  }
-
-  if (document.getElementById('user-reset-form')) {
-    document.getElementById('user-reset-cancel').onclick = () => {
-      state.users.resetUserId = ''
-      renderUsers()
-    }
-
-    document.getElementById('user-reset-form').onsubmit = async (event) => {
-      event.preventDefault()
-      const form = new FormData(event.currentTarget)
-      const id = String(form.get('id') || '')
-      const password = String(form.get('password') || '')
-
-      if (password.length < 6) {
-        toast('密码至少 6 个字符', 'warning')
-        return
-      }
-
-      try {
-        await api(`/users/${id}/reset-password`, {
-          method: 'POST',
-          body: JSON.stringify({ new_password: password })
-        })
-        state.users.resetUserId = ''
-        toast('密码已重置', 'success')
-        await renderUsers()
-      } catch (error) {
-        toast(error.message, 'error')
-      }
-    }
-  }
-
+  // Table actions
   document.querySelectorAll('[data-act]').forEach((button) => {
     button.onclick = async () => {
       const user = users.find((item) => item.id === button.dataset.id)
       if (!user) return
 
       if (button.dataset.act === 'reset') {
-        state.users.resetUserId = user.id
-        await renderUsers()
+        showModal({ title: `重置密码 - ${user.username}`, body: resetPasswordHtml(user) })
+        bindResetModal()
         return
       }
 
@@ -210,7 +226,6 @@ export async function renderUsers() {
 
       try {
         await api(`/users/${user.id}`, { method: 'DELETE' })
-        state.users.resetUserId = ''
         toast('用户已删除', 'success')
         await renderUsers()
       } catch (error) {

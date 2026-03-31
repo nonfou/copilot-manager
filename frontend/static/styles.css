@@ -953,6 +953,81 @@ a:focus-visible {
   justify-content: flex-end;
 }
 
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 9997;
+  display: grid;
+  place-items: start center;
+  padding: 60px 20px;
+  overflow-y: auto;
+}
+
+.modal {
+  width: min(100%, 560px);
+  background: #161616;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.modal-close {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.modal-close:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.modal-body {
+  padding: 20px;
+}
+
+.modal-body .form-grid {
+  margin-bottom: 0;
+}
+
+.modal-body .form-actions {
+  margin-bottom: 0;
+}
+
+.modal-footer {
+  padding: 12px 20px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@media (max-width: 640px) {
+  .modal-overlay { padding: 20px 12px; }
+}
+
 .loader {
   width: 16px;
   height: 16px;

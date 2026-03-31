@@ -16,11 +16,10 @@ export const state = {
   user: null,
   activeRoute: '',
   pageCleanup: null,
-  accounts: { mode: 'oauth', editId: '', models: null, oauth: null, timer: null },
-  keys: { filterAccountId: '', editId: '', revealedKey: '' },
+  accounts: { mode: 'oauth', oauth: null, timer: null },
+  keys: { filterAccountId: '', revealedKey: '' },
   logs: { page: 1, filterAccountId: '' },
-  detail: { keyId: '', page: 1 },
-  users: { resetUserId: '' }
+  detail: { keyId: '', page: 1 }
 }
 
 // SVG icons for navigation (Linear style)
@@ -236,6 +235,59 @@ export async function showConfirm({ title = '确认操作', message, confirmText
     // Auto-focus confirm button
     overlay.querySelector('.confirm-btn').focus()
   })
+}
+
+// Modal component
+let _activeModal = null
+let _modalKeyHandler = null
+
+export function showModal({ title, body, footer = '' }) {
+  closeModal()
+
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = '_modal-overlay'
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h2>${title}</h2>
+        <button class="modal-close" id="_modal-close">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6L6 18M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">${body}</div>
+      ${footer ? `<div class="modal-footer">${footer}</div>` : ''}
+    </div>
+  `
+
+  document.body.appendChild(overlay)
+  _activeModal = overlay
+
+  const close = () => closeModal()
+  overlay.querySelector('#_modal-close').onclick = close
+  overlay.onclick = (e) => {
+    if (e.target === overlay) close()
+  }
+
+  _modalKeyHandler = (e) => {
+    if (e.key === 'Escape') close()
+  }
+  document.addEventListener('keydown', _modalKeyHandler)
+
+  return overlay
+}
+
+export function closeModal() {
+  if (_activeModal) {
+    _activeModal.remove()
+    _activeModal = null
+  }
+  if (_modalKeyHandler) {
+    document.removeEventListener('keydown', _modalKeyHandler)
+    _modalKeyHandler = null
+  }
 }
 
 // Skeleton screen helper
